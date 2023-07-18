@@ -46,25 +46,19 @@ int cells[6][6] ; // cells[Y][X]
 /* --- NOFIX */
 
 
-commands
-get_op_code (char * s)
-{
+commandsget_op_code (char * s){
 	// return the corresponding number for the command given as s.
 	// FIXME
 }
 
-int
-load_game (char * filename)
-{
+int load_game (char * filename){
 	//FIXME
 	// load_game returns 0 for a success, or return 1 for a failure.
 	// Use fopen, getline, strtok, atoi, strcmp
 	// Note that the last character of a line obtained by getline may be '\n'.
 }
 
-void
-display ()
-{
+void display (){
 	/* The beginning state of board1.txt must be shown as follows: 
  	 + + 2 + + +
  	 + + 2 + + +
@@ -77,9 +71,7 @@ display ()
 	//FIXME
 }
 
-int 
-update_cells ()
-{
+int update_cells (){
 	memset(cells, 0, sizeof(int) * 36) ; // clear cells before the write.
 
 	//FIXME
@@ -87,9 +79,7 @@ update_cells ()
 	// return 1 if the given car information (cars) has a problem
 }
 
-int
-move (int id, int op) 
-{
+int move (int id, int op){
 	//FIXME
 	// move returns 1 when the given input is invalid.
 	// or return 0 for a success.
@@ -105,9 +95,7 @@ move (int id, int op)
 	//   a similar fashion.
 }
 
-int
-main ()
-{
+int main (){
 	char buf[128] ;
 	int op ;
 	int id ;
