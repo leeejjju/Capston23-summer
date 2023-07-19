@@ -1,0 +1,14 @@
+13
+C4:horizontal:2
+A5:vertical:2
+A6:horizontal:3
+D6:vertical:2
+B5:horizontal:2
+E6:vertical:3
+F6:vertical:3
+A3:horizontal:2
+C3:vertical:2
+B2:vertical:2
+E2:horizontal:2
+C1:horizontal:2
+E1:horizontal:2

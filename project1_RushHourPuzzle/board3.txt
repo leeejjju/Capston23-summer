@@ -1,0 +1,9 @@
+8
+B4:horizontal:2
+A6:vertical:3
+B6:horizontal:2
+D5:vertical:3
+A3:vertical:2
+B2:horizontal:2
+C1:horizontal:3
+F3:vertical:3
