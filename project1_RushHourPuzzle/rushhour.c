@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+// #include <windef.h>
 //#define DEBUG
 
 /* NOFIX --- */
@@ -46,52 +47,6 @@ int cells[6][6] ; // cells[Y][X]
 // F1 -> cells[0][5]
 
 /* --- NOFIX */
-
-
-/*
-!TIL
-
-한 개념을 완전히 깔끔하게 끝내고 다음으로. complexity를 계속 줄인다. 헷갈리지 않게!!! 
-본인부터 헷갈리면 남이랑 어케 협업하냐. 
-
-현업에서 실력의 척도 -> 본인의 커밋이 메인 브랜치에 들어가기까지의 기간. 3개월이면 잘한거고 일년이면 짤림.
-본인도 헷갈리는 코드는 코드리뷰도 걸러진다. 
-
-NULL && 하면 false? 
-
-클린코딩 -> 확실하게 코드가 나와야 고쳐쓸수도 있고... 정확한 시스템과 기능을 알아야 이게 가능함. 
-머릿속에 확실하게 알고 있어야 길게 생각할 수 있다. 잘 모르면 상상을 못함 -> 버그터지고 진도 안 나가고 ... 
-
-memset은 비싼 오퍼레이션 -> 중요치 않은 정보는 보안 신경 x ? 
-
-무지성 찍어보기/디버그 대신 로직을 제대로 살필 것. 
-코드를 보고 디버깅하기!!!
-디버거를 켜야 하는 경우: 내가 짜지 않은 부분에서 오는 리턴값을 봐야 할 때 
-
-GDP ? unix기반 라이브러리를 쓸 수 있나? 
-
-
-fuzzing
-load file 테스트
-
-
-main(int argc, char ** argv)
-
-argument로 파일명을 받아서 load_game에 넣기 
-
-afl-gcc: fuzzing의 오픈소스 기본 도구 
-afl-fuzz i input/ -o output/ ./a.out @@(랜덤파일) 
-인풋폴더에 있는 파일들을 베이스로 랜덤값들을 만듬. 
-
-
-path branch의 시퀀스? 경우의 수?
-
-리빌드 후 output폴더에 저장되는 파일을 인풋으로 돌리면 fault가 듬. 크래시.
-cat하면 내용 읽어볼 수 있음. 
-
-대부분의 보안 결함은 입력 파싱하는 부분. 
-
-*/
 
 
 // return the corresponding number for the command given as s.
@@ -249,14 +204,17 @@ void display (){
 	*/
 	printf(" \\  ");
 	for(int i = 0; i < 6; i++){
-		printf("%c ", 'A'+i);
+		printf("%c  ", 'A'+i);
 	}
 	printf("\n");
 
 	for(int y = 5; y >= 0; y--){
 		printf("%-2d: ", y+1);
 		for(int x = 0; x < 6; x++){
-			if(cells[y][x]) printf("%-2d ", cells[y][x]); 
+			if(cells[y][x]){
+				//SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 9);
+				printf("%-2d ", cells[y][x]); 
+			} 
 			else printf("+  ");
 		}
 		printf("\n");
@@ -267,9 +225,9 @@ void display (){
 
 
 // return 1 if input y,x is already used by other cars
-int isOccupied(int index, int x, int y){
+int isOccupied(int index, int y, int x){
 
-	for(int i = 0; i < index; i++){
+	for(int i = 0; i < n_cars; i++){
 		if(cars[i].dir == vertical){
 			for(int k = 0; k < cars[i].span; k++){
 				if((cars[i].y1 - k == y) && (cars[i].x1 == x)) return 1;
@@ -280,13 +238,16 @@ int isOccupied(int index, int x, int y){
 			}
 		}
 	}
+
+	return 0;
+
 }
 
 
 // Update cars[id].x1, cars[id].x2, cars[id].y1 and cars[id].y2 according to the given command (op) if it is possible.
 // move returns 1 when the given input is invalid / return 0 for a success.
-// TODO car관련만 다루도록
-//TODO car(모델) -> cell(뷰)로 이어지는 흐름. view의 보장이 없으므로 확실한 분리 - 함수와 관련 없는 변수를 고려할 필요 없도록
+// car관련만 다루도록
+// car(모델) -> cell(뷰)로 이어지는 흐름. view의 보장이 없으므로 확실한 분리 - 함수와 관련 없는 변수를 고려할 필요 없도록
 int move (int id, int op){
 	int index = id - 1;  //한 개념이 여러 용도로 쓰이면 안 됨
 
@@ -298,7 +259,7 @@ int move (int id, int op){
 		}
 
 		//check the area 
-		if((cars[index].x1-1 < 0) || cells[cars[index].y1][cars[index].x1-1] != 0){
+		if((cars[index].x1-1 < 0) || isOccupied(index, cars[index].y1 , cars[index].x1-1)){
 			return 1;
 		}
 
@@ -315,7 +276,7 @@ int move (int id, int op){
 		}
 
 		//check the area 
-		if((cars[index].x2+1 > 5) || cells[cars[index].y2][cars[index].x2+1] != 0){
+		if((cars[index].x2+1 > 5) || isOccupied(index, cars[index].y2, cars[index].x2+1)){
 			return 1;
 		}
 
@@ -331,7 +292,7 @@ int move (int id, int op){
 		}
 
 		//check the area 
-		if((cars[index].y2-1 < 0) || cells[cars[index].y2-1][cars[index].x2] != 0){
+		if((cars[index].y2-1 < 0) || isOccupied(index, cars[index].y2-1,cars[index].x2)){
 			return 1;
 		}
 
@@ -347,7 +308,7 @@ int move (int id, int op){
 		}
 
 		//check the area 
-		if((cars[index].y1+1 > 5) || cells[cars[index].y1+1][cars[index].x1] != 0){
+		if((cars[index].y1+1 > 5) || isOccupied(index, cars[index].y1+1, cars[index].x1)){
 			return 1;
 		}
 
