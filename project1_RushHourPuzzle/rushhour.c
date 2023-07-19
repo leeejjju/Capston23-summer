@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#define _DEBUG
+// #define _DEBUG
 
 //TODO error출력은 stdout 말고 따로 뺄 것
 
@@ -59,17 +59,14 @@ commands get_op_code (char * s){
 }
 
 
-
+//read input file and allocate cars 
+// load_game returns 0 for a success, or return 1 for a failure.
 int load_game (char * filename){
-	//FIXME
-	// load_game returns 0 for a success, or return 1 for a failure.
 	// Use fopen, getline, strtok, atoi, strcmp
-	// Note that the last character of a line obtained by getline may be '\n'.
-	FILE* fp = NULL;
-	fp = fopen(filename, "r");
 
-	if(fp == NULL){
-		printf("[error] cannot find the file %s\n", filename);
+	FILE* fp = NULL;
+	if((fp = fopen(filename, "r")) == NULL){
+		fprintf(stderr, "[error] cannot find the file %s\n", filename); //! 에러출력예시 
 		return 1;
 	}
 
@@ -174,6 +171,7 @@ int load_game (char * filename){
 }
 
 
+//display the current cells array in format
 void display (){
 	/* The beginning state of board1.txt must be shown as follows: 
  	 + + 2 + + +
@@ -183,16 +181,25 @@ void display (){
 	 + + + + + 4
 	 + + + + + 4
 	*/
+	printf("+ : ");
+	for(int i = 0; i < 6; i++){
+		printf("%c ", 'A'+i);
+	}
+	printf("\n");
+
 	for(int y = 5; y >= 0; y--){
+		printf("%d : ", y+1);
 		for(int x = 0; x < 6; x++){
 			if(cells[y][x]) printf("%d ", cells[y][x]); 
 			else printf("+ ");
 		}
 		printf("\n");
 	}
-	//FIXME
+	printf("\n");
 }
 
+// update cells array by information of cars array
+// return 0 for sucess / return 1 if the given car information (cars) has a problem
 int update_cells (){
 	memset(cells, 0, sizeof(int) * 36) ; // clear cells before the write.
 
@@ -217,20 +224,123 @@ int update_cells (){
 		}
 	}
 
+	if(cells[3][5] == 1){
+		printf("\n*..☆.｡.:*.SUCCESS･*..☆.｡.:*.\n\n");
+		display();
+		printf("\n.｡.:.+*:ﾟ+｡.ﾟ･*..☆.｡.:*.☆.｡.:'\n\n");
+		exit(EXIT_SUCCESS);
+	}
+
 	return 0;
 
-	// return 0 for sucess
-	// return 1 if the given car information (cars) has a problem
 }
 
-
+// Update cars[id].x1, cars[id].x2, cars[id].y1 and cars[id].y2
+//   according to the given command (op) if it is possible.
+// move returns 1 when the given input is invalid / return 0 for a success.
 int move (int id, int op){
-	//FIXME
-	// move returns 1 when the given input is invalid.
-	// or return 0 for a success.
+	id--; 
 
-	// Update cars[id].x1, cars[id].x2, cars[id].y1 and cars[id].y2
-	//   according to the given command (op) if it is possible.
+	switch (op){
+	case left:
+		//check the direction
+		if(cars[id].dir == vertical){
+			printf("[system] impossible!\n");
+			printf("[error] cannot move car%d to %s : car%d is horizontal\n", cars[id].id, op_str[op], cars[id].id);
+			return 1;
+		}
+
+		//check the area 
+		if((cars[id].x1-1 < 0) || cells[cars[id].y1][cars[id].x1-1] != 0){
+			printf("[system] impossible!\n");
+			printf("[error] cannot move car%d to %s : blocked area\n", cars[id].id, op_str[op]);
+			return 1;
+		}
+
+		//move and update
+		cars[id].x1--;
+		cars[id].x2--;
+		update_cells();
+
+		break;
+
+	case right:
+		//check the direction
+		if(cars[id].dir == vertical){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : car%d is vertical\n", cars[id].id, op_str[op], cars[id].id);
+			#endif
+			return 1;
+		}
+
+		//check the area 
+		if((cars[id].x2+1 > 5) || cells[cars[id].y2][cars[id].x2+1] != 0){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : blocked area\n", cars[id].id, op_str[op]);
+			#endif
+			return 1;
+		}
+
+		//move and update
+		cars[id].x1++;
+		cars[id].x2++;
+		update_cells();
+		break;
+
+	case down:
+		//check the direction
+		if(cars[id].dir == horizontal){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : car%d is vertical\n", cars[id].id, op_str[op], cars[id].id);
+			#endif
+			return 1;
+		}
+
+		//check the area 
+		if((cars[id].y2-1 < 0) || cells[cars[id].y2-1][cars[id].x2] != 0){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : blocked area\n", cars[id].id, op_str[op]);
+			#endif
+			return 1;
+		}
+
+		//move and update
+		cars[id].y1--;
+		cars[id].y2--;
+		update_cells();
+		break;
+	case up:
+		//check the direction
+		if(cars[id].dir == horizontal){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : car%d is vertical\n", cars[id].id, op_str[op], cars[id].id);
+			#endif
+			return 1;
+		}
+
+		//check the area 
+		if((cars[id].y1+1 > 5) || cells[cars[id].y1+1][cars[id].x1] != 0){
+			printf("[system] impossible!\n");
+			#ifdef _DEBUG
+			printf("[error] cannot move car%d to %s : blocked area\n", cars[id].id, op_str[op]);
+			#endif
+			return 1;
+		}
+
+		//move and update
+		cars[id].y1++;
+		cars[id].y2++;
+		update_cells();
+		break;	
+	default:
+		printf("[error] invalid command\n");
+		return 1;
+	}
 
 	// The condition that car_id can move left is when 
 	//  (1) car_id is horizontally placed, and
@@ -239,8 +349,6 @@ int move (int id, int op){
 	// You can find the condition for moving right, up, down as
 	//   a similar fashion.
 
-	printf("[system] impossible!\n");
-
 }
 
 int main (){
@@ -248,15 +356,15 @@ int main (){
 	int op ;
 	int id ;
 
-	//! for test
-	strcpy(buf, "board1.txt");
-	#ifdef _DEBUG
-	printf("[debug] start the game with file %s\n", buf);
-	#endif
-	load_game(buf) ;
-	update_cells() ;
-	display();
-	//! for test
+	// //! for test
+	// strcpy(buf, "board1.txt");
+	// #ifdef _DEBUG
+	// printf("[debug] start the game with file %s\n", buf);
+	// #endif
+	// load_game(buf) ;
+	// update_cells() ;
+	// display();
+	// //! for test
 
 	while (1) {
 		scanf("%s", buf) ;
@@ -271,8 +379,8 @@ int main (){
 				#ifdef _DEBUG
 				printf("[debug] start the game with file %s\n", buf);
 				#endif
-				load_game(buf) ;
-				update_cells() ;
+				if(load_game(buf)) continue;
+				if(update_cells()) continue;
 				display();
 				break;
 
@@ -280,13 +388,26 @@ int main (){
 			case right:
 			case up:
 			case down:
+
+				if(cars == NULL){
+					printf("[system] please start the game before! \n");
+					getchar();
+					continue;
+				}
+
 				scanf("%d", &id) ;
 				getchar();
+
+				if(id < 1 || id > n_cars){
+					printf("[error] cannot move car%d to %s : invalid car number\n", id, op_str[op]);
+					continue;
+				}
+
 				#ifdef _DEBUG
 				printf("[debug] move car%d to %s\n", id, op_str[op]);
 				#endif
 				move(id, op) ;
-				update_cells() ;
+				if(update_cells()) continue;
 				display() ;
 				break;
 			case quit:
