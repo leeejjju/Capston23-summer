@@ -2,101 +2,62 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <errno.h>
 #define BUFSIZE 512
 
-int xxd(char filename[32]);
-int enumFiles(char filename[32]);
-int copyFiles(char soruce[32], char dest[32]);
+DIR* makeDirStream(char* path);
+int enumFiles(DIR* src, char* path);
 
+DIR* src = NULL;
 
 int main(int argc, char** argv){
     char buf[32];
 
-    if(argc == 1){
-        printf("type the filename: ");
-        scanf("%s", buf);
-    }else{
-        strcpy(buf, argv[1]);
+    if(argc < 3){
+        printf("[star] invalid usage");
+        return 0;
     }
 
-    printf("Let's read %s as hexadecimal...\n", buf);
-    if(xxd(buf)){
-        fprintf(stderr, "[error] cannot read the file %s\n", buf);
+    if(!strcmp(argv[1], "list")){
+        printf("[star] start to enum the files...\n");
+
+        if((src = opendir(argv[1])) == NULL){
+            printf("directory open error\n"); 
+            closedir(src);
+        }
+
+        if(enumFiles(src, argv[2])){
+            fprintf(stderr, "[error] cannot read the path %s\n", argv[2]);
+        }
     }
 
-    return 0; 
-
-
-
-    if(!strcmp(argv[1], "archive")){
-        
-    }else if(!strcmp(argv[1], "list")){
-
-    }else if(!strcmp(argv[1], "extract")){
-        
-    }else{
-        fprintf(stderr, "[error] invalid command\n");
-        exit(EXIT_FAILURE);
-    }
-
+    return 0;
 }
 
 
-// read file and display it as hexadecimal numbers 
-// return 0 on success, return 1 on failure 
-int xxd(char filename[32]){
-    FILE* fd;
-    char buf[BUFSIZE];
-    size_t readLen = 0;
-    int addr = 0;
-    int i = 0;
-    int pre = 0;
-    
-    if((fd = fopen(filename, "rb")) == NULL){
-        return 1;
-    }
+// read the files in the path and print it
+int enumFiles(DIR* src, char* path){
 
-    while(readLen = fread(buf, sizeof(char), sizeof(buf), fd)){
+    struct dirent* one = NULL;
+    char nextPath[128];
 
-        if(ferror(fd)){
-            return 1;
-        }
+    //read all files in this dir
+    //if another dir is in there, call enumFiles() again
+    while(one = readdir(src)){
+        char* dname = one->d_name;
+        if(dname[0] == '.') continue; //exceop hidden files/dir
 
-        for(i = 0; i < strlen(buf); i++){
-            if(!(i%16)){
-                printf("\n%08x: ", addr++);
-            }
-            if(i < readLen){
-                printf("%02x", buf[i]);
-                if(!((i+1)%2)) printf(" ");
-            }else{
-                printf("  ", buf[i]);
-                if(!((i+1)%2)) printf(" ");
-            }
-
-            if((i%16) == 15){
-                printf("  ");
-                for(int k = pre; k <= i; k++){
-                    if(!iscntrl(buf[k])) printf("%c", buf[k]);
-                    else printf(".");
-                }
-                pre = i+1;
-            }
-            
-        }
-        
-        for(int k = (i%16); k < 16; k++) {
-            printf("  ");
-            if(!((i+1)%2)) printf(" ");
-        }
-        for(int k = pre; k <= i; k++){
-            if(!iscntrl(buf[k])) printf("%c", buf[k]);
-            else printf(".");
+        if(one->d_type == DT_DIR){ //recursively open
+            sprintf(nextPath, "%s/%s", path, dname);
+            if(enumFiles(src, nextPath)) return 1;
+        }else{
+            printf("%s/%s\n", path, dname);
         }
     }
 
-    printf("\n");
-    fclose(fd);
+    closedir(src);
+    if(errno == EBADF) return 1;
     return 0;
 
 }
