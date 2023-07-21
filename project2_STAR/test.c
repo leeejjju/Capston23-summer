@@ -9,6 +9,7 @@
 DIR* makeDirStream(char* path);
 int enumFiles(DIR* src, char* path);
 
+
 DIR* src = NULL;
 
 int main(int argc, char** argv){
@@ -22,9 +23,8 @@ int main(int argc, char** argv){
     if(!strcmp(argv[1], "list")){
         printf("[star] start to enum the files...\n");
 
-        if((src = opendir(argv[1])) == NULL){
+        if((src = opendir(argv[2])) == NULL){
             printf("directory open error\n"); 
-            closedir(src);
         }
 
         if(enumFiles(src, argv[2])){
@@ -33,6 +33,10 @@ int main(int argc, char** argv){
     }
 
     return 0;
+}
+
+DIR* makeDirStream(char* path){
+
 }
 
 
