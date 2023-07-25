@@ -7,11 +7,10 @@
 #include <sys/stat.h>
 #define BUFSIZE 4096 //4KB page size 
 #define CHAR_SIZE 1
-#define DEBUG
+// #define DEBUG
 
 char absDest[BUFSIZE];
 FILE* acvFile = NULL;
-char* acvPath;
 
 // read file and display it as hexadecimal numbers 
 // return 0 on success, return 1 on failure 
@@ -71,40 +70,6 @@ int xxd(char* filename){
 
 }
 
-//read all files in this dir and print it
-//if another dir is in there, call enumFiles() recursively
-//return 0 on success, return 1 on failure
-int enumFiles(char* path){
-
-    DIR* src = NULL;
-    struct dirent* one = NULL;
-    char nextPath[BUFSIZE];
-
-
-    #ifdef DEBUG
-    printf("[star] exploring directory %s ...\n", path);
-    #endif
-
-    while(one = readdir(src)){
-        char* dname = one->d_name;
-        // TODO modify to consider links
-        if(one->d_type == DT_DIR){ //if find subdir, recursively open
-            // if(!strcmp(one->d_name, ".") || !strcmp(one->d_name, "..")) continue; //except hidden files/dir
-            if((one->d_name)[0] == '.') continue; //except hidden files/dir
-            sprintf(nextPath, "%s/%s", path, dname);
-            if(enumFiles(nextPath)) return EXIT_FAILURE;
-        }else if(one->d_type == DT_LNK){
-            continue;
-        }else{ //else, just print it 
-            printf("%s/%s\n", path, dname);
-        }
-    }
-
-    closedir(src);
-    if(errno == EBADF) return EXIT_FAILURE;
-    return EXIT_SUCCESS;
-
-}
 
 //list all file headers on acv-file 
 int list(){
@@ -114,9 +79,6 @@ int list(){
     char path[BUFSIZE];
     int readLen = 0;
 
-    #ifdef DEBUG
-    printf("[star] start to list %s ...\n", acvPath);
-    #endif
 
     while(!feof(acvFile)){
         //4 byte path length n
@@ -135,6 +97,11 @@ int list(){
 
         //m byte contents
         fseek(acvFile, size, SEEK_CUR);
+
+        if(ferror(acvFile)){
+            perror("[list]");
+            return EXIT_FAILURE;
+        }
 
     }
 
@@ -472,7 +439,7 @@ int makeOneFile(char* fileName, int size){
     FILE* newFile = NULL;
     char buf[BUFSIZE];
 
-    //make path as cut from last '/' 
+    //make path as cut all from last '/' 
     char* path = strdup(fileName);
     int endIndex = 0;
     for(int i = 0; i < strlen(path); i++){
@@ -494,35 +461,43 @@ int makeOneFile(char* fileName, int size){
     #endif
 
     //write contents from acv-file as size
-    while(1){
+    while((size > BUFSIZE) && !feof(acvFile)){
+
         readLen = fread(buf, CHAR_SIZE, BUFSIZE, acvFile);
         writeLen = fwrite(buf, CHAR_SIZE, readLen, newFile);
+        #ifdef DEBUG
+        printf("%s\n", buf);
+        #endif 
+
         if(readLen != writeLen){
             perror("[makeOneFile]");
             fclose(newFile);
             return EXIT_FAILURE;
         }
+        size -= readLen;
         #ifdef DEBUG
         printf("read %d byte, remain size is %d byte\n", readLen, size);
         #endif 
-        size -= readLen;
-        if(size < BUFSIZE || readLen == 0) break;
+
     }
 
-    if((size + readLen) > 0){
-        size += readLen;
+    if(size > 0) {
         readLen = fread(buf, CHAR_SIZE, size, acvFile);
         writeLen = fwrite(buf, CHAR_SIZE, readLen, newFile);
         #ifdef DEBUG
-        printf("read %d , remain size is %d \n", readLen, size);
-        #endif
+        printf("%s\n", buf);
+        #endif 
+
         if(readLen != writeLen){
             perror("[makeOneFile]");
             fclose(newFile);
             return EXIT_FAILURE;
         }
+        size -= readLen;
+        #ifdef DEBUG
+        printf("read %d byte, remain size is %d byte\n", readLen, size);
+        #endif 
     }
-    
 
     #ifdef DEBUG
     printf("[star] succesfully extracted %s!\n", fileName);
@@ -538,29 +513,32 @@ int extract(char* fileName){
 
     unsigned int pathLen = 0;
     unsigned int size = 0;
-    char path[BUFSIZE] = "";
-
-    #ifdef DEBUG
-    printf("[star] start to extract %s ...\n", fileName);
-    #endif
+    char path[BUFSIZE];
+    int readLen = 0;
 
     while(!feof(acvFile)){
         //4 byte path length n
-        fread((void*)&pathLen, CHAR_SIZE, 4, acvFile);
+        readLen = fread((void*)&pathLen, CHAR_SIZE, 4, acvFile);
+        if(!readLen) break;
+
         //n byte path
         fread(path, CHAR_SIZE, pathLen, acvFile);
+        path[pathLen] = 0;
+
         //4 byte contents size m
         fread((void*)&size, CHAR_SIZE, 4, acvFile);
         #ifdef DEBUG
-        printf("%u %s %u\n", pathLen, path, size);
+        printf("%u | %s | %u\n", pathLen, path, size);
         #endif
 
-        #ifdef DEBUG
-        printf("[star] extracting file %s, pathLen is %d and size is %d\n", path, pathLen, size);
-        #endif
         //m byte contents
         if(makeOneFile(path, (int)size)){
             perror("[extract]");
+            return EXIT_FAILURE;
+        }
+
+        if(ferror(acvFile)){
+            perror("[list]");
             return EXIT_FAILURE;
         }
 
@@ -581,16 +559,14 @@ int main(int argc, char** argv){
     
     //archive 
     if(!strcmp(argv[1], "archive") && argc > 3){
-        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
-        strcpy(acvPath, argv[2]);
-        if((acvFile = fopen(acvPath, "wb+")) == NULL){
+        if((acvFile = fopen(argv[2], "wb+")) == NULL){
             perror("[acvFile]");
             return EXIT_FAILURE;
         }
-        
-        printf("[star] start to archive %s to %s ...\n", argv[3], acvPath);
+
+        printf("[star] start to archive %s to %s ...\n", argv[3], argv[2]);
         if(archive(argv[3])){
-            fprintf(stderr, "[error] cannot archive %s to %s\n", argv[3], acvPath);
+            fprintf(stderr, "[error] cannot archive %s to %s\n", argv[3], argv[2]);
         }else printf("done!\n");
 
         fclose(acvFile);
@@ -602,31 +578,26 @@ int main(int argc, char** argv){
     }else if(!strcmp(argv[1], "list") && argc > 2){
 
         //open the archived file 
-        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
-        strcpy(acvPath, argv[2]);
-
-        if((acvFile = fopen(acvPath, "rb")) == NULL){
-            fprintf(stderr, "[error] cannot open dir %s: ", acvPath);
+        if((acvFile = fopen(argv[2], "rb")) == NULL){
+            fprintf(stderr, "[error] cannot open dir %s: ", argv[2]);
             perror("");
             return EXIT_FAILURE;
         }
+
+        printf("[star] start to list %s ...\n", argv[2]);
 
         if(list()){
             fprintf(stderr, "[error] cannot read the path %s\n", argv[2]);
         }else printf("done!\n");
 
-        //enumFiles(argv[2]);
-
+        fclose(acvFile);
 
     //extract 
     }else if(!strcmp(argv[1], "extract") && argc > 2){
 
         //open the archived file 
-        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
-        strcpy(acvPath, argv[2]);
-
-        if((acvFile = fopen(acvPath, "rb")) == NULL){
-            fprintf(stderr, "[error] cannot open dir %s: ", acvPath);
+        if((acvFile = fopen(argv[2], "rb")) == NULL){
+            fprintf(stderr, "[error] cannot open dir %s: ", argv[2]);
             perror("");
             return EXIT_FAILURE;
         }
