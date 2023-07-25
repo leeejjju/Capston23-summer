@@ -254,8 +254,7 @@ int copyFiles(char* srcPath, char* destPath){
 
 
     if((src = opendir(srcPath)) == NULL){
-        fprintf(stderr, "[error] directory open error: "); 
-        perror("");
+        perror("[copyFiles]");
         return EXIT_FAILURE;
     }
 
@@ -263,7 +262,6 @@ int copyFiles(char* srcPath, char* destPath){
     if((dest = opendir(destPath)) == NULL){
         makeDirectory(destPath, srcStat.st_mode);
         if((dest = opendir(destPath)) == NULL){
-            fprintf(stderr, "[error] directory open error: "); 
             perror("[copyFiles]");
             return EXIT_FAILURE;
         }
@@ -384,17 +382,10 @@ int archive(char* srcPath){
     struct dirent* one = NULL;
     struct stat srcStat;
     lstat(srcPath, &srcStat);
-
-    //! 디렉토리 맞는지 체크 - 필요한가? 
-    if(S_ISREG(srcStat.st_mode)){
-        printf("[star] this is file, not a directory\n");
-        return EXIT_FAILURE;
-    }
     
     //open the target directory
     if((src = opendir(srcPath)) == NULL){
-        fprintf(stderr, "[error] directory open error: "); 
-        perror("");
+        perror("[archive]");
         return EXIT_FAILURE;
     }
 
@@ -412,7 +403,7 @@ int archive(char* srcPath){
         if(one->d_type == DT_DIR){ 
             if(dname[0] == '.') continue; //except . and .. dir 
             if(archive(nextSrc)) { 
-                perror("[archive:dir]");
+                perror("[archive:subdir]");
                 closedir(src);
                 return EXIT_FAILURE;
             }
@@ -549,21 +540,19 @@ int extract(char* fileName){
 
 
 int main(int argc, char** argv){
+
+    if(argc < 3){
+        printf("\n[star] invalid command\n");
+        printf("usage: star archive [archive-file-name] [target directory path]\n       star list [archive-file-name]\n       star extract [archive-file-name]\n       star xxd [file-name]\n       star cp [source directory path] [destination directory path]\n");
+        return EXIT_FAILURE;
+    }
     
     //archive 
     if(!strcmp(argv[1], "archive") && argc > 3){
-        //make dest directory and make archive file in it. 
-        if(mkdir("./archiving", 0777) == -1){
-            #ifdef DEBUG
-            printf("[star] directory ./archiving exist!\n");
-            #endif
-        }
-        //TODO more flexable naming... 
-        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+strlen("./archiving "));
-        sprintf(acvPath, "./archiving/%s", argv[2]);
+        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
+        strcpy(acvPath, argv[2]);
         if((acvFile = fopen(acvPath, "wb+")) == NULL){
-            fprintf(stderr, "[error] cannot open dir %s: ", acvPath);
-            perror("");
+            perror("[acvFile]");
             return EXIT_FAILURE;
         }
         
@@ -573,6 +562,7 @@ int main(int argc, char** argv){
         }else printf("done!\n");
 
         fclose(acvFile);
+        system("tree");
 
 
     //list
@@ -590,9 +580,9 @@ int main(int argc, char** argv){
     //extract 
     }else if(!strcmp(argv[1], "extract") && argc > 2){
 
-        //open the archive file 
-        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+strlen("./archiving/.star "));
-        sprintf(acvPath, "./archiving/%s.star", argv[2]);
+        //open the archived file 
+        acvPath = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
+        strcpy(acvPath, argv[2]);
 
         if((acvFile = fopen(acvPath, "rb")) == NULL){
             fprintf(stderr, "[error] cannot open dir %s: ", acvPath);
@@ -639,5 +629,4 @@ int main(int argc, char** argv){
 
     return EXIT_SUCCESS;
 }
-
 
