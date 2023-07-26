@@ -6,11 +6,11 @@
 #include <errno.h>
 #include <sys/stat.h>
 #define BUFSIZE 4096 //4KB page size 
-#define CHAR_SIZE 1
 // #define DEBUG
 
 char absDest[BUFSIZE];
 FILE* acvFile = NULL;
+const int CHAR_SIZE = 1;
 
 // read file and display it as hexadecimal numbers 
 // return 0 on success, return 1 on failure 
@@ -228,11 +228,6 @@ int copyFiles(char* srcPath, char* destPath){
     lstat(srcPath, &srcStat);
     mode = srcStat.st_mode;
 
-    // if((srcStat.st_mode) == S_IFLNK){
-    //     printf("[star] this file is link.\n");
-    //     return EXIT_SUCCESS;
-    // }
-
     //if same path detected, skip it 
     realpath(srcPath, absSrc);
     #ifdef DEBUG
@@ -449,6 +444,7 @@ int makeOneFile(char* fileName, int size){
     }
     path[endIndex] = 0;
     
+
     makeDirectory(path, 0766);
     //open new file with given path
     if((newFile = fopen(fileName, "wb+")) == NULL){
