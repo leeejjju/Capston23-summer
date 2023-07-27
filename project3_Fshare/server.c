@@ -5,7 +5,10 @@
 #include <netinet/in.h> 
 #include <unistd.h> 
 #include <pthread.h> 
+#include <sys/stat.h> 
 #define BUFSIZE 4096
+ 
+
 int port;
 char* path;
 
@@ -17,30 +20,30 @@ void* runner(void* arg){
 
     char buf[BUFSIZE] ;
 	char * data = 0x0, * orig = 0x0 ;
-	int len = 0 ;
+	long long int len = 0 ;
 	int s = 0;
 
-    //receive the command from server
-	while ( (s = recv(conn, buf, BUFSIZE-1, 0)) > 0 ) {
-		buf[s] = 0x0 ;
-		if (data == 0x0) {
-			data = strdup(buf) ;
-			len = s ;
-		}
-		else {
-			data = realloc(data, len + s + 1) ;
-			strncpy(data + len, buf, s) ;
-			data[len + s] = 0x0 ;
-			len += s ;
-		}
-
-	}
-
-    
-    //send apropriate buf to client 
     char cmd[5];
     char srcPath[BUFSIZE];
-    sscanf(data, "%s %s", cmd, buf);
+
+    //recv the header from client
+    if(!recv(conn, cmd, 4, 0)){
+        perror("[cannot read header: cmd]");
+        close(conn);
+        return NULL;
+    }
+    if(!recv(conn, &len, 4, 0)){
+        perror("[cannot read header: size]");
+        close(conn);
+        return NULL;
+    }
+    //recv the payload from client 
+    if(!recv(conn, buf, len, 0)){
+        perror("[cannot read payload]");
+        close(conn);
+        return NULL;
+    }
+
     sprintf(srcPath, "%s/%s", path, buf);
     printf("> cmd: %s, filename: %s\n", cmd, srcPath);
     
@@ -60,14 +63,21 @@ void* runner(void* arg){
         FILE* srcFile = NULL;
         if((srcFile = fopen(srcPath, "r")) == NULL){
             perror("[cannot make file]");
+            close(conn);
             return NULL;
         }
+
+        struct stat srcStat;
+        lstat(srcPath, &srcStat);
+        printf("size of content: %lld\n", (long long int)srcStat.st_size);
+        
 
         //read it and write the contents to client
         while((s = fread(buf, 1, BUFSIZE-1, srcFile)) > 0){
 
             if(ferror(srcFile)){
                 perror("[cannot read contents]");
+                close(conn);
                 fclose(srcFile);
                 return NULL;
             }
@@ -76,6 +86,7 @@ void* runner(void* arg){
 
             if(send(conn, buf, s, 0) <= 0){
                 perror("[cannot send contents]");
+                close(conn);
                 fclose(srcFile);
                 return NULL;
             }

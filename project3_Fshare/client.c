@@ -2,10 +2,10 @@
 #include <stdlib.h> 
 #include <string.h> 
 #include <sys/socket.h> 
+#include <sys/stat.h> 
 #include <netinet/in.h> 
 #include <arpa/inet.h>
 #define BUFSIZE 4096
-
 
 
 int main(int argc, char** argv){
@@ -15,28 +15,27 @@ int main(int argc, char** argv){
     }
     char* ip = (char*)malloc(sizeof(char)*strlen(argv[1])+1);
     char cmd[4];
+    char* srcPath = (char*)malloc(sizeof(char)*strlen(argv[3])+1);
     strcpy(ip, argv[1]);
     strcpy(cmd, argv[2]);
+    strcpy(srcPath, argv[3]);
 
-    //get ip and port
+    //get ip and port from argv[2]
     int index = 0;
     int port = 0;
-
     for(int i = 0; i < strlen(ip); i++){
         if(ip[i] == ':') index = i;
     }
-
     ip[index] = 0;
     port = atoi(&ip[index+1]);
+    printf("ip: %s\nport: %d\npath:%s\n", ip, port, srcPath);
 
-    printf("ip: %s\nport: %d\n", ip, port);
 
-
+    //make socket and connect to server using ip and port 
     struct sockaddr_in serv_addr; 
 	int sock_fd ;
-	int s, len ;
+	int s, len = 0;
 	char buffer[BUFSIZE] = {0}; 
-	char * data ;
 	
 	sock_fd = socket(AF_INET, SOCK_STREAM, 0) ;
 	if (sock_fd <= 0) {
@@ -57,114 +56,162 @@ int main(int argc, char** argv){
 		exit(EXIT_FAILURE) ;
 	}
 
-    //TODO sending header  
-    sprintf(buffer,"%s %s", cmd, argv[3]);
-	printf("size of buf: %d, %d\n", (int)sizeof(buffer), (int)strlen(buffer));
 
-    if((s = send(sock_fd, buffer, strlen(buffer), 0)) <= 0){
+	printf("size of header: %d + %d\n", (int)sizeof(cmd), (int)sizeof(len));
+
+    //send header: cmd
+    if(!send(sock_fd, cmd, 4, 0)){
         perror("[cannot send header]");
         free(ip);
+        free(srcPath);
         return EXIT_FAILURE;
     }
+    
 
-
-	shutdown(sock_fd, SHUT_WR) ;
-    printf("\n");
-
-	char buf[BUFSIZE] ;
-	data = 0x0 ;
-	len = 0 ;
-	while ( (s = recv(sock_fd, buf, BUFSIZE-1, 0)) > 0 ) {
-        if(s == 0){
-            perror("[cannot read contents]");
+    //list
+    if(!strcmp(cmd, "list")){
+        printf("[list]\n");
+        //send header: payload size: 0
+        len = 0;
+        printf("size of payload: %d\n", len);
+        if(!send(sock_fd, &len, 4, 0)){
+            perror("[cannot send header]");
             free(ip);
+            free(srcPath);
             return EXIT_FAILURE;
         }
-		buf[s] = 0x0 ;
-
-        printf("%s", buf);
-
-		// if (data == 0x0) {
-		// 	data = strdup(buf) ;
-		// 	len = s ;
-		// }
-		// else {
-		// 	data = realloc(data, len + s + 1) ;
-		// 	strncpy(data + len, buf, s) ;
-		// 	data[len + s] = 0x0 ;
-		// 	len += s ;
-		// }
-        // printf(">%s", data); 
-	}
-    printf("\n");
-	
-	
-
-    // if(!strcmp(cmd, "list")){
-    //     char buf[BUFSIZE] ;
-    
-    //     //write to server 
-    //     sprintf(buf, "%s %s", argv[2], "");
-    //     data = buf;
-    //     len = strlen(data);
-    //     s = 0 ;
-
-    //     while (len > 0 && (s = send(sock_fd, data, len, MSG_DONTWAIT)) > 0) {
-    //         data += s ;
-    //         len -= s ;
-    //     }
-    //     shutdown(sock_fd, SHUT_WR) ;
-
-    //     //read from server
+        shutdown(sock_fd, SHUT_WR) ;
         
-    //     data = 0x0 ;
-    //     len = 0 ;
-    //     while ( (s = recv(sock_fd, buf, BUFSIZE, 0)) > 0 ) {
-    //         buf[s] = 0x0 ;
-    //         if (data == 0x0) {
-    //             data = strdup(buf) ;
-    //             len = s ;
-    //         }
-    //         else {
-    //             data = realloc(data, len + s + 1) ;
-    //             strncpy(data + len, buf, s) ;
-    //             data[len + s] = 0x0 ;
-    //             len += s ;
-    //         }
 
-    //     }
-    //     printf("> %s\n", data); 
+    //get 
+    }else if(!strcmp(cmd, "get")){
+        printf("[get]\n");
+
+        //send header: payload size: strlen(filename)
+        len = strlen(srcPath);
+        printf("size of payload: %d\n", len);
+        if(!send(sock_fd, &len, 4, 0)){
+            perror("[cannot send header]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+
+        //send payload: filename
+        if(!send(sock_fd, srcPath, len, 0)){
+            perror("[cannot send payload]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+
+        shutdown(sock_fd, SHUT_WR) ;
 
 
-    // }else if(!strcmp(cmd, "get")){
-    //     if(argc < 4){
-    //         goto EXIT;
-    //     }
-    //     //make new file and open it 
-    //     //send request to server
-    //     //receive stream and write to the file
-    //     //close file
-    // }else if(!strcmp(cmd, "put")){
-    //     if(argc < 4){
-    //         goto EXIT;
-    //     }
-    //     //open file
-    //     //send request to server
-    //     //send contents to server 
-    //     //close file 
-    // }else{
-        EXIT:
 
-        // printf("[client] invalid command\n");
-        // printf("usasg: \n");
-        // if(argc > 2){
-        //     free(ip);
-        // }
-        // return EXIT_FAILURE;
-    // }
 
-    printf("done!\n");
+    //put 
+    }else if(!strcmp(cmd, "put")){
+        printf("[put]\n");
+        
+        //open the file
+        FILE* srcFile = NULL;
+        if((srcFile = fopen(srcPath, "r")) == NULL){
+            perror("[cannot make file]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+
+        struct stat srcStat;
+        lstat(srcPath, &srcStat);
+        len = (strlen(srcPath) + sizeof(int)*2 + srcStat.st_size);
+        printf("size of payload: %d\n", len);
+
+        //send header: payload size: sizeof(archive(filename))
+        if(!send(sock_fd, &len, 4, 0)){
+            perror("[cannot send header]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+
+        //TODO send payload: archive format 
+        //---------------------------------------------
+
+        while((s = fread(buffer, 1, BUFSIZE-1, srcFile)) > 0){
+
+            if(ferror(srcFile)){
+                perror("[cannot read contents]");
+                free(ip);
+                free(srcPath);
+                return EXIT_FAILURE;
+            }
+
+            buffer[s] = 0x0;
+
+            if(!send(sock_fd, buffer, s, 0)){
+                perror("[cannot send contents]");
+                free(ip);
+                free(srcPath);
+                return EXIT_FAILURE;
+            }
+            if(feof(srcFile)) break;
+        }
+
+        fclose(srcFile);
+        //---------------------------------------------
+            
+
+        shutdown(sock_fd, SHUT_WR) ;
+
+
+    //show 
+    }else if(!strcmp(cmd, "show")){
+        printf("[show]\n");
+        //send header: payload size: strlen(filename)
+        len = strlen(srcPath);
+        printf("size of payload: %d\n", len);
+        if(!send(sock_fd, &len, 4, 0)){
+            perror("[cannot send header]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+
+        //send payload: filename
+        if(!send(sock_fd, srcPath, len, 0)){
+            perror("[cannot send payload]");
+            free(ip);
+            free(srcPath);
+            return EXIT_FAILURE;
+        }
+        shutdown(sock_fd, SHUT_WR) ;
+
+
+        printf("\n");
+
+        len = 0;
+        while ((s = recv(sock_fd, buffer, BUFSIZE-1, 0))) {
+            printf("%s", buffer);
+            len += s;
+        }
+
+    // invalid 
+    }else{
+        
+
+        
+    }
+
+    
+
+
+	
+	printf("done!\n");
+    EXIT:
     free(ip);
+    free(srcPath);
     return EXIT_SUCCESS;
 
 }
