@@ -14,7 +14,7 @@ int main(int argc, char** argv){
         goto EXIT;
     }
     char* ip = (char*)malloc(sizeof(char)*strlen(argv[1])+1);
-    char* cmd = (char*)malloc(sizeof(char)*strlen(argv[2])+1);
+    char cmd[4];
     strcpy(ip, argv[1]);
     strcpy(cmd, argv[2]);
 
@@ -57,16 +57,16 @@ int main(int argc, char** argv){
 		exit(EXIT_FAILURE) ;
 	}
 
-	// scanf("%s", buffer) ;
-    sprintf(buffer,"%s %s", argv[2], argv[3]);
-	
-	data = buffer ;
-	len = strlen(buffer) ;
-	s = 0 ;
-	while (len > 0 && (s = send(sock_fd, data, len, 0)) > 0) {
-		data += s ;
-		len -= s ;
-	}
+    //TODO sending header  
+    sprintf(buffer,"%s %s", cmd, argv[3]);
+	printf("size of buf: %d, %d\n", (int)sizeof(buffer), (int)strlen(buffer));
+
+    if((s = send(sock_fd, buffer, strlen(buffer), 0)) <= 0){
+        perror("[cannot send header]");
+        free(ip);
+        return EXIT_FAILURE;
+    }
+
 
 	shutdown(sock_fd, SHUT_WR) ;
     printf("\n");
@@ -78,7 +78,6 @@ int main(int argc, char** argv){
         if(s == 0){
             perror("[cannot read contents]");
             free(ip);
-            free(cmd);
             return EXIT_FAILURE;
         }
 		buf[s] = 0x0 ;
@@ -160,14 +159,12 @@ int main(int argc, char** argv){
         // printf("usasg: \n");
         // if(argc > 2){
         //     free(ip);
-        //     free(cmd);
         // }
         // return EXIT_FAILURE;
     // }
 
     printf("done!\n");
     free(ip);
-    free(cmd);
     return EXIT_SUCCESS;
 
 }
