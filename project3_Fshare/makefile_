@@ -1,5 +1,0 @@
-make: fshared.c fshare.c 
-    gcc fshared.c -o server
-    gcc fshare.c -o client
-clean:
-    rm *.o a
