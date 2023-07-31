@@ -78,7 +78,9 @@ int listFiles(char* srcPath, int conn){
         }else{ 
             sheader.is_error = 0;
             sheader.payload_size = strlen(&nextSrc[strlen(homePath)+1]);
+            #ifdef DEBUG
             printf("clean list: %s\n", &nextSrc[strlen(homePath)+1]);
+            #endif 
             //send header
             if(!send(conn, &sheader, SHEADER_SIZE, 0)){
                 perror("[cannot send header]");

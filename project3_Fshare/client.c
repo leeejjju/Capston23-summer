@@ -30,6 +30,11 @@ struct server_header{
 	int payload_size;      // file contents size
 };
 
+FILE* srcFile = NULL;
+struct client_header cheader;
+struct server_header sheader;
+int flag = 0;
+
 //make all directorys if not exits : nested mkdir
 int makeDirectory(char* path){
 
@@ -67,6 +72,180 @@ int makeDirectory(char* path){
 
 }
 
+int run_list(int sock_fd){
+
+    int s = 0;
+    char buffer[BUFSIZE];
+
+    printf("[list]\n");
+    //send header: payload size: 0
+    cheader.command = list;
+    cheader.des_path_len = 0;
+    cheader.src_path_len = 0;
+    cheader.payload_size = 0;
+    if(!send(sock_fd, &cheader, CHEADER_SIZE, 0)){
+        perror("[cannot send header]");
+        return 1;
+    }
+    shutdown(sock_fd, SHUT_WR) ;
+
+    // recv and printf payload from server
+    while (s = recv(sock_fd, &sheader, 8, 0)) {
+        if(sheader.is_error){
+            perror("[error on server]");
+            return 1;
+        }
+        s = recv(sock_fd, buffer, sheader.payload_size, 0);
+        buffer[s] = 0;
+        if(!s) break;
+
+        printf("%s\n", buffer);
+    }
+    return 0;
+
+}
+
+int run_get(int sock_fd, char* srcPath, char* destPath){
+
+    char buffer[BUFSIZE];
+    int s = 0;
+
+    printf("[get]\n");
+
+    //send header
+    cheader.command = get;
+    cheader.src_path_len = strlen(srcPath);
+    cheader.des_path_len = 0;
+    cheader.payload_size = 0;
+    if(!send(sock_fd, &cheader, CHEADER_SIZE, 0)){
+        perror("[cannot send header]");
+        return 1;
+    }
+    //send payload:srcpath
+    if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
+        perror("[cannot send payload]");
+        return 1;
+    }
+    shutdown(sock_fd, SHUT_WR) ;
+    
+    makeDirectory(destPath);
+    strcat(destPath, "/");
+    strcat(destPath, basename(srcPath));
+    #ifdef DEBUG
+    printf("dest: %s\n", destPath);
+    #endif
+    
+
+    //open the file
+    if((srcFile = fopen(destPath, "wb")) == NULL){
+        perror("[cannot make file]");
+        return 1;
+    }
+
+    printf("\n");
+    while ((s = recv(sock_fd, buffer, BUFSIZE-1, 0))) {
+        buffer[s]=0;
+        if(!fwrite(buffer, 1, s, srcFile)) break;
+        printf("%s", buffer);
+    }
+
+    fclose(srcFile);
+
+    return 0;
+}
+
+int run_put(int sock_fd, char* srcPath, char* destPath){
+    printf("[put]\n");
+        
+    //open the file
+    if((srcFile = fopen(srcPath, "rb")) == NULL){
+        perror("[cannot make file]");
+        flag = 1;
+        goto EXIT;
+    }
+
+    struct stat srcStat;
+    lstat(srcPath, &srcStat);
+
+    //send header
+    cheader.command = put;
+    cheader.src_path_len = strlen(srcPath);
+    cheader.des_path_len = strlen(destPath);
+    cheader.payload_size = srcStat.st_size;
+    if(!send(sock_fd, &cheader, 16, 0)){
+        perror("[cannot send header]");
+        return 1;
+    //send payload:srcpath
+    if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
+        perror("[cannot send payload]");
+        return 1;
+    }
+    //send payload:destpath
+    if(!send(sock_fd, destPath, cheader.des_path_len, 0)){
+        perror("[cannot send payload]");
+        return 1;
+    }
+    //send payload: file contents
+    while((s = fread(buffer, 1, BUFSIZE-1, srcFile)) > 0){
+
+        if(ferror(srcFile)){
+            perror("[cannot read contents]");
+            return 1;
+        }
+
+        buffer[s] = 0;
+
+        if(!send(sock_fd, buffer, s, 0)){
+            perror("[cannot send contents]");
+            return 1;
+        }
+
+        if(feof(srcFile)) break;
+    }
+
+    fclose(srcFile);
+
+    sheader.is_error = 0;
+    sheader.payload_size = 0;
+    if(!send(sock_fd, &sheader, 8, 0)){
+        perror("[cannot send contents]");
+        return 1;
+    }
+    shutdown(sock_fd, SHUT_WR);
+
+    return 0;
+}
+
+int run_show(int sock_fd, char* srcPath){
+    int s = 0;
+    char* buffer[BUFSIZE];
+
+    printf("[show]\n");
+    //send header: payload size: strlen(filename)
+    cheader.command = show;
+    cheader.src_path_len = strlen(srcPath);
+    cheader.des_path_len = 0;
+    cheader.payload_size = 0;
+
+    if(!send(sock_fd, &cheader, CHEADER_SIZE, 0)){
+        perror("[cannot send header]");
+        return 1;
+    }
+    //send payload: filename
+    if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
+        perror("[cannot send payload]");
+        return 1;
+    }
+    shutdown(sock_fd, SHUT_WR) ;
+
+    while ((s = recv(sock_fd, buffer, BUFSIZE-1, 0))) {
+        buffer[s] = 0;
+        printf("%s", buffer);
+    }
+    return 0;
+
+}
+
 
 int main(int argc, char** argv){
 
@@ -78,12 +257,12 @@ int main(int argc, char** argv){
         goto EXIT;
     }
     if(argc >= 4){
-        srcPath = (char*)malloc(sizeof(char)*strlen(argv[3])+1);
-        strcpy(srcPath, argv[3]);
+        srcPath = strdup(argv[3]);
+        srcPath[strlen(argv[3])] = 0;
     } 
     if(argc == 5){
-        destPath = (char*)malloc(sizeof(char)*strlen(argv[4])+1);
-        strcpy(destPath, argv[4]);
+        destPath = strdup(argv[4]);
+        destPath[strlen(argv[4])] = 0;
     }
 
     ip = (char*)malloc(sizeof(char)*strlen(argv[1])+1);
@@ -137,198 +316,68 @@ int main(int argc, char** argv){
 		exit(EXIT_FAILURE) ;
 	}
 
-    FILE* srcFile = NULL;
-    struct client_header cheader;
-    struct server_header sheader;
+    
 
     //send payload size and payload, get apropriate response
     switch (command) {
     case list:
-        if(argc < 3) goto FAIL;
-
-        printf("[list]\n");
-        //send header: payload size: 0
-        cheader.command = list;
-        cheader.des_path_len = 0;
-        cheader.src_path_len = 0;
-        cheader.payload_size = 0;
-        if(!send(sock_fd, &cheader, CHEADER_SIZE, 0)){
-            perror("[cannot send header]");
-            goto FAIL;
+        if(argc < 3){ 
+            flag = -1;
+            goto EXIT;
         }
-        shutdown(sock_fd, SHUT_WR) ;
-
-        // recv and printf payload from server
-        while (s = recv(sock_fd, &sheader, 8, 0)) {
-            if(sheader.is_error){
-                perror("[error on server]");
-                goto FAIL;
-            }
-            s = recv(sock_fd, buffer, sheader.payload_size, 0);
-            buffer[s] = 0;
-            if(!s) break;
-
-            printf("%s\n", buffer);
-        }
-
+        flag = run_list(sock_fd);
         break;
+
     case get: 
-        if(argc < 5) goto FAIL;
-
-        printf("[get]\n");
-
-        //send header
-        cheader.command = get;
-        cheader.src_path_len = strlen(srcPath);
-        cheader.des_path_len = strlen(destPath);
-        cheader.payload_size = 0;
-        //send header
-        if(!send(sock_fd, &cheader, CHEADER_SIZE, 0)){
-            perror("[cannot send header]");
-            goto FAIL;
+        if(argc < 5){
+            flag = -1;
+            goto EXIT;
         }
-        //send payload:srcpath
-        if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
-            perror("[cannot send payload]");
-            goto FAIL;
-        }
-        shutdown(sock_fd, SHUT_WR) ;
-        
-        makeDirectory(destPath);
-        strcat(destPath, "/");
-        strcat(destPath, basename(srcPath));
-        #ifdef DEBUG
-        printf("dest: %s\n", destPath);
-        #endif
-        
-
-        //open the file
-        if((srcFile = fopen(destPath, "wb")) == NULL){
-            perror("[cannot make file]");
-            goto FAIL;
-        }
-
-        printf("\n");
-        while ((s = recv(sock_fd, buffer, BUFSIZE-1, 0))) {
-            buffer[s]=0;
-            if(!fwrite(buffer, 1, s, srcFile)) break;
-            printf("%s", buffer);
-        }
-
-        fclose(srcFile);
-
-        
+        flag = run_get(sock_fd, srcPath, destPath);
         break;
 
     case put: 
-        if(argc < 5) goto FAIL;
-        printf("[put]\n");
-        
-        //open the file
-        if((srcFile = fopen(srcPath, "rb")) == NULL){
-            perror("[cannot make file]");
-            goto FAIL;
+        if(argc < 5){
+            flag = -1;
+            goto EXIT;
         }
-
-        struct stat srcStat;
-        lstat(srcPath, &srcStat);
-
-        //send header
-        cheader.command = put;
-        cheader.src_path_len = strlen(srcPath);
-        cheader.des_path_len = strlen(destPath);
-        cheader.payload_size = srcStat.st_size;
-        if(!send(sock_fd, &cheader, 16, 0)){
-            perror("[cannot send header]");
-            goto FAIL;
-        }
-        //send payload:srcpath
-        if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
-            perror("[cannot send payload]");
-            goto FAIL;
-        }
-        //send payload:destpath
-        if(!send(sock_fd, destPath, cheader.des_path_len, 0)){
-            perror("[cannot send payload]");
-            goto FAIL;
-        }
-        //send payload: file contents
-        while((s = fread(buffer, 1, BUFSIZE-1, srcFile)) > 0){
-
-            if(ferror(srcFile)){
-                perror("[cannot read contents]");
-                goto FAIL;
-            }
-
-            buffer[s] = 0;
-
-            if(!send(sock_fd, buffer, s, 0)){
-                perror("[cannot send contents]");
-                goto FAIL;
-            }
-
-            if(feof(srcFile)) break;
-        }
-
-        fclose(srcFile);
-
-        sheader.is_error = 0;
-        sheader.payload_size = 0;
-        if(!send(sock_fd, &sheader, 8, 0)){
-            perror("[cannot send contents]");
-            goto FAIL;
-        }
-        shutdown(sock_fd, SHUT_WR);
+        flag = run_put(sock_fd, srcPath, destPath);
         
         break;
 
     case show:
-        if(argc < 4) goto FAIL;
-
-        printf("[show]\n");
-        //send header: payload size: strlen(filename)
-        len = strlen(srcPath);
-        cheader.command = show;
-        cheader.src_path_len = strlen(srcPath);
-        cheader.des_path_len = 0;
-        cheader.payload_size = 0;
-
-        if(!send(sock_fd, &cheader, sizeof(cheader), 0)){
-            perror("[cannot send header]");
-            goto FAIL;
+        if(argc < 4){
+            flag = -1;
+            goto EXIT;
         }
-        //send payload: filename
-        if(!send(sock_fd, srcPath, cheader.src_path_len, 0)){
-            perror("[cannot send payload]");
-            goto FAIL;
-        }
-        shutdown(sock_fd, SHUT_WR) ;
-
-        len = 0;
-        while ((s = recv(sock_fd, buffer, BUFSIZE-1, 0))) {
-            buffer[s] = 0;
-            printf("%s", buffer);
-            len += s;
-        }
+        flag = run_show(sock_fd, srcPath);
 
         break;
 
     default:
-        printf("invalid command!\n");
-        goto EXIT;
+        flag = -1;
     }
     
 
-	printf("done!\n");
+	
     EXIT:
-    if(argc >= 4) free(srcPath);
-    if(argc == 5) free(destPath);
-    return EXIT_SUCCESS;
 
-    FAIL:
     if(argc >= 4) free(srcPath);
     if(argc == 5) free(destPath);
-    return EXIT_FAILURE;
+    if(flag == 0) {
+        printf("done!\n");
+        return EXIT_SUCCESS;
+    }
+    else if(flag == -1) {
+        printf("usage: ./client [ip]:[port] list\n");
+        printf("       ./client [ip]:[port] get [srcPath] [destPath]\n");
+        printf("       ./client [ip]:[port] put [srcPath] [destPath]\n");
+        printf("       ./client [ip]:[port] show [srcPath]\n");
+        EXIT_FAILURE;
+    }else{
+        printf("error exits\n");
+        EXIT_FAILURE;
+    }
 
 
 }
