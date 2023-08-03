@@ -5,17 +5,17 @@
 #include <pthread.h> 
 #include <sys/socket.h> 
 #include <sys/time.h>
+#include <sys/types.h>
 #include <unistd.h>
-
-#include <netinet/in.h> 
 #include <arpa/inet.h>
-#include <libgen.h>
 
-#define THEME BLUE
-#define LINESIZE 20 //TODO remove it
-#define HEADERSIZE 4
-#define BUFSIZE 512;
+// #include <netinet/in.h> 
+// #include <libgen.h>
 
+#define THEME RED
+#define BUFSIZE 512
+const int MODE_INPUT = 0;
+const int MODE_OUTPUT = 1;
 
 typedef enum{
 	BLACK,
@@ -25,9 +25,9 @@ typedef enum{
 	NOP
 } color;
 
-
 pthread_mutex_t readOK, writeOK;
 int isError = 0;
+char errorMsg[BUFSIZE];
 char* ip;
 int port = 0;
 
@@ -63,10 +63,10 @@ int recv_bytes(int fd, char * buf, size_t len){
 }
 
 //get ip and port from args
-void getIpAndPort(char* args){
+void getIpAndPort(char** args){
 	
-	ip = (char*)malloc(sizeof(char)*strlen(argv[1])+1);
-    strcpy(ip, argv[1]);
+	ip = (char*)malloc(sizeof(char)*strlen(args[1])+1);
+    strcpy(ip, args[1]);
 
     int index = 0;
     for(int i = 0; i < strlen(ip); i++) if(ip[i] == ':') index = i;
@@ -86,9 +86,7 @@ int makeConnection(){
 	conn = socket(AF_INET, SOCK_STREAM, 0) ;
 	
 	if (conn <= 0) {
-		perror("socket failed : ") ;
-		mvwprintw(server, 0, 0, " socker failed\n");
-		wrefresh(server);
+		strcpy(errorMsg,  " socket failed\n");
 		return 0;
 	} 
 
@@ -96,14 +94,11 @@ int makeConnection(){
 	serv_addr.sin_family = AF_INET; 
 	serv_addr.sin_port = htons(port); 
 	if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
-		perror("inet_pton failed : ") ; 
-		mvwprintw(server, 0, 0, " inet_pton failed\n");
-		wrefresh(server);
+		strcpy(errorMsg, " inet_pton failed\n");
 		return 0;
 	}
 	if (connect(conn, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-		mvwprintw(server, 0, 0, " connect failed\n");
-		wrefresh(server);
+		strcpy(errorMsg, " connect failed\n");
 		return 0;
 	}
 
@@ -164,44 +159,53 @@ void* inputBox(void* c){
 
 	WINDOW* client = (WINDOW*)c;
 	char buf[BUFSIZE];
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	suseconds_t lastTime = now.tv_usec;
+	int s;
+	int conn;
 	
 	while(1){
 
-		pthread_mutex_lock(&writeOK);
+		// pthread_mutex_lock(&writeOK);
 		wgetstr(client, buf);
+		if(!strcmp(buf, "quit")) break;
+		if(strlen(buf) > 512){
+			werase(client);
+			mvwprintw(client, 0, 0, " too long to send :(");
+			getch();
+			werase(client);
+			wrefresh(client);
+			continue;
+		}
 
-		int conn;
-		if(conn = makeConnection()){
+		
+		if(!(conn = makeConnection())){
 			isError = 1;
-			return;
+			return NULL;
 		}
 		int len = strlen(buf);
-
+		
 
 		//TODO modify with send_bytes... 
 		//send header
-		if(!(s = send(conn, &len, sizeof(int), 0)) || !(s = send(conn, &lastTime, sizeof(susecond_t), 0))){
-			wprintw(server, " [cannot send header]\n");
-			wrefresh(server);
+		if(!(s = send(conn, &MODE_INPUT, sizeof(int), 0)) || !(s = send(conn, &len, sizeof(int), 0))){
+			strcpy(errorMsg, " [cannot send header]\n");
 			isError = 1;
-			return;
+			return NULL;
 		}
-
 		//send payload 
 		if(!(s = send(conn, buf, len, 0))){
-			wprintw(server, " [cannot send payload]\n");
-			wrefresh(server);
+			strcpy(errorMsg, " [cannot send payload]\n");
 			isError = 1;
-			return;
+			return NULL;
 		}
-		shutdown(sock_fd, SHUT_WR);
-		pthread_mutex_unlock(&readOK);
+		shutdown(conn, SHUT_WR);
+		// pthread_mutex_unlock(&readOK);
 
-		if(!strcmp(buf, "quit")) break;
-		
+		if(!(s = recv(conn, &isError, sizeof(int), 0)) || isError){
+			strcpy(errorMsg, " [error on server]\n");
+			isError = 1;
+			return NULL;
+		}
+
 		werase(client);
 		wrefresh(client);
 	}
@@ -212,7 +216,7 @@ void* inputBox(void* c){
 //init outputbox window
 void init_outputBox(WINDOW* server){
 
-	WINDOW* outBox = newwin(LINESIZE+1, COLS, 3, 0);
+	WINDOW* outBox = newwin(21, COLS, 3, 0);
 	wbkgd(outBox, COLOR_PAIR(THEME));
 	box(outBox, ACS_VLINE, ACS_HLINE);
 	wrefresh(outBox);
@@ -227,27 +231,49 @@ void init_outputBox(WINDOW* server){
 }
 
 
-void* outputBox(void* s){
+void* outputBox(void* ss){
 
-	WINDOW *server = (WINDOW*)s;
+	WINDOW *server = (WINDOW*)ss;
 	char buf[BUFSIZE];
-	int y, x;
-	time_t timer; //TODO 
+	int conn;
+	int s;
+	struct timeval now;
+	gettimeofday(&now, NULL);
+	suseconds_t lastTime = now.tv_usec;
 	
 	while(1){
 		
-		pthread_mutex_lock(&readOK);
-		
-		int len;
-		if(!recv(conn, &len, HEADERSIZE, 0) || !recv(conn, buf, len, 0)){
-			wprintw(server, " [cannot recv message]\n");
-			wrefresh(server);
+		// pthread_mutex_lock(&readOK);
+		if(!(conn = makeConnection())){
 			isError = 1;
 			return NULL;
 		}
-		if(!strcmp(buf, "quit")) break;
+
+		//send header
+		if(!(s = send(conn, &MODE_OUTPUT, sizeof(int), 0)) || !(s = send(conn, &lastTime, sizeof(suseconds_t), 0))){
+			strcpy(errorMsg, " [cannot send header]\n");
+			isError = 1;
+			return NULL;
+		}
+		shutdown(conn, SHUT_WR);
+
+		int len = 0;
+		//recv header
+		if(!(s = recv(conn, &len, sizeof(int), 0)) || !(s = recv(conn, &lastTime, sizeof(suseconds_t), 0))){
+			strcpy(errorMsg, " [cannot recv header]\n");
+			isError = 1;
+			return NULL;
+		}
+		//recv payload
+		if(!(s = recv(conn, buf, len, 0))){
+			strcpy(errorMsg, " [cannot recv payload]\n");
+			isError = 1;
+			return NULL;
+		}
+
+		// if(!strcmp(buf, "quit")) break;
 		wprintw(server, "[me] %s\n", buf);
-		pthread_mutex_unlock(&writeOK);
+		// pthread_mutex_unlock(&writeOK);
 		
 		wrefresh(server);
 		refresh();
@@ -264,7 +290,7 @@ int main(int argc, char *argv[]) {
     bkgd(COLOR_PAIR(THEME));//select theme
 	init_main();
 
-	WINDOW* server = newwin(LINESIZE-1, COLS-2, 4, 1);
+	WINDOW* server = newwin(19, COLS-2, 4, 1);
 	init_outputBox(server);
 	WINDOW* client = newwin(1, COLS-2, 25, 1);
 	init_inputBox(client);
@@ -299,6 +325,13 @@ int main(int argc, char *argv[]) {
 	pthread_join(client_pid, NULL);
 	pthread_join(server_pid, NULL);
 	noecho();
+
+	if(isError){
+		mvwprintw(server, 0, 0, "%s", errorMsg);
+		wrefresh(server);
+		goto EXIT;
+	}
+	
 	mvwprintw(client, 0, 0, " Good bye :)");
 	
 	EXIT:
@@ -316,60 +349,3 @@ int main(int argc, char *argv[]) {
 	return 0;
 
 }
-
-
-// KEY사용한 입력받기
-// key = wgetch(client);
-		// getyx(client, y, x);
-		// mvprintw(33, 25, "x: %-2d, y: %-2d | press ESC to quit...", x, y);
-		// refresh();
-		
-		// if(x >= 58){
-		// 	wmove(client, y+1, 2);
-		// }
-		// if(y > 13){
-		// 	wclear(client);
-		// 	wmove(client, 1, 2);
-		// 	wprintw(client, "> type anthing!"); 
-		// 	wmove(client, 2, 2);
-		// 	box(client, ACS_VLINE, ACS_HLINE);
-		// 	wrefresh(client);
-		// }
-		// if(key == ESCAPE){
-		// 	return;
-		// }else if(key == BACKSPACE){ 
-		// 	wdelch(client);
-		// }
-		// getyx(client, y, x);
-		// mvprintw(33, 25, "x: %-2d, y: %-2d | press ESC to quit...", x, y);
-		// refresh();
-
-//TODO 취소창 -> 테마선택 만들구파... 
-// while(1)
-    // {
-    //     key = getch();
-
-    //     if (key == ESCAPE || key == 'q')
-    //     {
-    //         WINDOW *check;
-	// 		int key;
-
-	// 		check = newwin(3, 40, 5, 10);
-	// 		wmove(check, 1, 2);
-	// 		wprintw(check, "Exit program (y/n) ? "); 
-	// 		wbkgd(check, COLOR_PAIR(2));
-	// 		box(check, ACS_VLINE, ACS_HLINE);
-	// 		refresh();
-
-	// 		key = wgetch(check);
-	// 		delwin(check);
-
-	// 		if (key == 'y')
-	// 			goto EXIT;
-	// 		else 
-	// 			goto EXIT;
-    //     }
-
-    //     touchwin(stdscr);
-    //     refresh();    
-    // }

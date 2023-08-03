@@ -172,3 +172,59 @@ int main(int argc, char *argv[]) {
 	return 0;
 
 }
+
+// KEY사용한 입력받기
+// key = wgetch(client);
+		// getyx(client, y, x);
+		// mvprintw(33, 25, "x: %-2d, y: %-2d | press ESC to quit...", x, y);
+		// refresh();
+		
+		// if(x >= 58){
+		// 	wmove(client, y+1, 2);
+		// }
+		// if(y > 13){
+		// 	wclear(client);
+		// 	wmove(client, 1, 2);
+		// 	wprintw(client, "> type anthing!"); 
+		// 	wmove(client, 2, 2);
+		// 	box(client, ACS_VLINE, ACS_HLINE);
+		// 	wrefresh(client);
+		// }
+		// if(key == ESCAPE){
+		// 	return;
+		// }else if(key == BACKSPACE){ 
+		// 	wdelch(client);
+		// }
+		// getyx(client, y, x);
+		// mvprintw(33, 25, "x: %-2d, y: %-2d | press ESC to quit...", x, y);
+		// refresh();
+
+//TODO 취소창 -> 테마선택 만들구파... 
+// while(1)
+    // {
+    //     key = getch();
+
+    //     if (key == ESCAPE || key == 'q')
+    //     {
+    //         WINDOW *check;
+	// 		int key;
+
+	// 		check = newwin(3, 40, 5, 10);
+	// 		wmove(check, 1, 2);
+	// 		wprintw(check, "Exit program (y/n) ? "); 
+	// 		wbkgd(check, COLOR_PAIR(2));
+	// 		box(check, ACS_VLINE, ACS_HLINE);
+	// 		refresh();
+
+	// 		key = wgetch(check);
+	// 		delwin(check);
+
+	// 		if (key == 'y')
+	// 			goto EXIT;
+	// 		else 
+	// 			goto EXIT;
+    //     }
+
+    //     touchwin(stdscr);
+    //     refresh();    
+    // }
