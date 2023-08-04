@@ -79,7 +79,7 @@ int makeConnection(){
 
 	int conn;
 	struct sockaddr_in serv_addr; 
-	conn = socket(AF_INET, SOCK_STREAM, 0) ;
+	conn = socket(AF_INET, SOCK_STREAM, 0);
 	
 	if (conn <= 0) {
 		strcpy(errorMsg,  " socket failed\n");
@@ -118,7 +118,7 @@ void init(){
     keypad(stdscr, TRUE); //enable to reading a function keys 
 	cbreak(); //accept the special characters... 
 	echo();
-    
+
 }
 
 //print basic information to main window
@@ -202,6 +202,7 @@ void* inputBox(void* c){
 		wrefresh(client);
 	}
 
+	close(conn);
 	return NULL;
 }
 
@@ -228,9 +229,8 @@ void* outputBox(void* ss){
 	char buf[BUFSIZE];
 	int conn;
 	int s;
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	struct timeval lastTime = now;
+	struct timeval lastTime;
+	lastTime.tv_sec = 0;
 	
 	while(1){
 
@@ -251,24 +251,32 @@ void* outputBox(void* ss){
 
 		//TODO modify to get all the msg server sent at once
 		int len = 0;
-		//recv header
-		if(!(s = recv(conn, &len, sizeof(len), 0)) || !(s = recv(conn, &lastTime, sizeof(lastTime), 0))){
-			strcpy(errorMsg, " [cannot recv header]\n");
-			isError = 1;
-			return NULL;
-		}
-		//recv payload
-		if(!(s = recv(conn, buf, len, 0))){
-			strcpy(errorMsg, " [cannot recv payload]\n");
-			isError = 1;
-			return NULL;
-		}
-		buf[s] = 0;
+		// mvprintw(1,1,"init...");
 
-		wprintw(server, "[server] %s\n", buf);
+		// while(1){
+			//recv header
+			if(!(s = recv(conn, &len, sizeof(len), 0)) || !(s = recv(conn, &lastTime, sizeof(lastTime), 0))){
+				strcpy(errorMsg, " [cannot recv header]\n");
+				isError = 1;
+				return NULL;
+			}
+			// if(s == 0) break;
+			//recv payload
+			if(!(s = recv(conn, buf, len, 0))){
+				strcpy(errorMsg, " [cannot recv payload]\n");
+				isError = 1;
+				return NULL;
+			}
+			// if(s == 0) break;
+			buf[s] = 0;
+
+			wprintw(server, "[server] %s\n", buf);
+			wrefresh(server);
+			refresh();
+			mvprintw(1,1,"continued");
+		// }
 		
-		wrefresh(server);
-		refresh();
+		mvprintw(1,1,"breaked");
 		close(conn);
 		
 	}
@@ -326,12 +334,13 @@ int main(int argc, char *argv[]) {
 	mvwprintw(client, 0, 0, " Good bye :)");
 	
 	EXIT:
-	wprintw(server, " press any key to exit…");
+	wprintw(server, " press any key to exit...");
 	wrefresh(client);
 	wrefresh(server);
 
 	getch();
-	
+
+
 	free(ip);
 	delwin(client);
 	delwin(server);

@@ -17,15 +17,21 @@
 const int SUCCESS = 0;
 const int FAILURE = 1;
 
-int port;
-char* homePath;
+int port = 0;
+pthread_mutex_t readOK, writeOK;
+
 
 typedef struct message{
-	suseconds_t timestamp;
+	struct timeval timestamp;
 	char contents[BUFSIZE];
+	struct message* next;
 } msg;
 
-msg cache[10];
+struct linked_list{
+	msg* head;
+	msg* tail;
+	int size;
+} llist;
 
 
 // TODO how to use...?
@@ -59,264 +65,209 @@ int recv_bytes(int fd, char * buf, size_t len){
     return 0 ;
 }
 
-// for output client -> send messages after recv timestamp
-int listFiles(char* srcPath, int conn){
+/* compair two timeval
+return 0 if a > b, 
+return 1 if a <= b */
+int comp(struct timeval a, struct timeval b){
+	if(a.tv_sec != b.tv_sec) return (a.tv_sec <= b.tv_sec);
+	else return (a.tv_usec <= b.tv_usec);
+}
 
-    DIR* src = NULL;
-    struct dirent* one = NULL;
-    char nextSrc[BUFSIZE];
-    struct stat srcStat;
-    lstat(srcPath, &srcStat);
-    struct server_header sheader;
+// for output client (MODE_OUTPUT)-> send messages after recv timestamp
+void* sendMsgs(void* con){
 
+	int conn = *(int*)con;
+    free(con);
 
-    if((src = opendir(srcPath)) == NULL){
-        perror("[listFiles]");
-        goto SEND_ERROR;
+	//recv header(timestamp)
+	struct timeval pivot;
+	if(!recv(conn, &pivot, sizeof(pivot), 0)){
+        perror("[cannot recv header(timestamp)]");
+		goto EXIT;
     }
 
-    //read all the file/sudir informations in src path and send to client
-    //recursively explore the subdirs 
-    while(one = readdir(src)){
+	// see all the llist, send it when timestamp is larger then recv stamp
+	while(1){
+		int sendCount = 0;
+		sleep(1);
+		pthread_mutex_lock(&readOK);
+		for(msg* p = llist.head; p != NULL; p = p->next){
+			printf("> [OUTPUT] compair %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
+			if(comp(pivot, p->timestamp)){
+				sendCount++;
+				int len = strlen(p->contents);
+				//send header:payloadsize
+				if(!send(conn, &len, sizeof(len), 0)){
+					perror("[cannot send header(size)]");
+					goto EXIT;
+				}
+				//send header:timestamp
+				if(!send(conn, &(p->timestamp), sizeof(p->timestamp), 0)){
+					perror("[cannot send header(timestamp)]");
+					goto EXIT;
+				}
+				//send payload
+				if(!send(conn, p->contents, len, 0)){
+					perror("[cannot send payload]");
+					goto EXIT;
+				}
+				printf("> [OUTPUT] send: \"%s\" : %ld, savedMsg: %d\n", p->contents, p->timestamp.tv_sec, llist.size);
+			}
+		}
+		printf("> [OUTPUT] %d msg sended...\n", sendCount);
+		pthread_mutex_unlock(&writeOK);
+		if(sendCount != 0) break;
+	}
 
-        char* dname = one->d_name;
-        sprintf(nextSrc, "%s/%s", srcPath, dname);
-
-        if(one->d_type == DT_DIR){ //dir: recursively explore 
-            if(dname[0] == '.') continue; //except . and .. dir 
-
-            if(listFiles(nextSrc, conn)) { 
-                perror("[listFiles:dir]");
-                goto SEND_ERROR;
-            }
-
-        }else if(one->d_type == DT_LNK){
-            continue;
-
-        }else{ 
-            sheader.is_error = 0;
-            sheader.payload_size = strlen(&nextSrc[strlen(homePath)+1]);
-            //send header
-            if(!(s = send(conn, &sheader, SHEADER_SIZE, 0)) || (s != SHEADER_SIZE)){
-                perror("[cannot send header]");
-                goto SEND_ERROR;
-            }
-            //send payload 
-            if(!(s = send(conn, &nextSrc[strlen(homePath)+1], sheader.payload_size, 0)) || (s != sheader.payload_size)){
-                perror("[cannot send payload]");
-                goto SEND_ERROR;
-            }
-        }
-
-    }
-    
-    closedir(src);
-    return EXIT_SUCCESS;
-
-    SEND_ERROR:
-    if(src != NULL) closedir(src);
-    sheader.is_error = 1;
-    sheader.payload_size = 0;
-    //send header
-    if(!(s = send(conn, &sheader, SHEADER_SIZE, 0)) || (s != SHEADER_SIZE)){
-        perror("[cannot send header]");
-    }
-
-    return EXIT_FAILURE;
+	EXIT:
+	shutdown(conn, SHUT_WR);
+	printf("> [OUTPUT] socket closed --------------------------\n");
+	close(conn);
+	return NULL;
 
 }
 
 
+// for input client (MODE_INPUT)-> recv messages form client and save it on saved list 
+void* getMsgs(void* con){
+	int conn = *(int*)con;
+    free(con);
 
-int putFile(struct client_header cheader, int conn){
-    
-    int s = 0;
-    char srcPath[BUFSIZE];
-    char destPath[BUFSIZE];
-    char buf[BUFSIZE];
-    FILE* srcFile = NULL;
-    printf("size of recv payload: %d\n", cheader.des_path_len);
+	int len, s;
+	int isError = 0;
+	char buf[BUFSIZE];
 
-    //recv the payload from client 
-    if(!(s = recv(conn, srcPath, cheader.src_path_len, 0))){
-        perror("[cannot read payload]");
-        close(conn);
-        return EXIT_FAILURE;
+	//recv header
+	if(!recv(conn, &len, sizeof(len), 0)){
+        perror("[cannot recv header]");
+		isError = 1;
+		goto EXIT;
     }
-    srcPath[s] = 0;
-    //recv the payload from client 
-    if(!(s = recv(conn, buf, cheader.des_path_len, 0))){
-        perror("[cannot read payload]");
-        close(conn);
-        return EXIT_FAILURE;
+	
+	//recv payload
+	if(!(s = recv(conn, buf, len, 0))){
+        perror("[cannot recv payload]");
+		isError = 1;
+		goto EXIT;
     }
-    buf[s] = 0;
-    
-    if(!strcmp(buf, ".")){
-        sprintf(destPath, "%s/%s", homePath, basename(srcPath));
-    }else{
-        sprintf(destPath, "%s/%s", homePath, buf);
-        makeDirectory(destPath);
-        strcat(destPath, "/");
-        strcat(destPath, basename(srcPath));
+	buf[s] = 0;
+
+	//make the msg and save buf, add to llist
+	pthread_mutex_lock(&writeOK);
+	msg* newMsg = (msg*)malloc(sizeof(msg));
+	gettimeofday(&(newMsg->timestamp), NULL);
+	strcpy(newMsg->contents, buf);
+	newMsg->next = NULL;
+
+	if(llist.size == 0) {
+		llist.head = newMsg;
+		llist.tail = newMsg;
+	}else{
+		(llist.tail)->next = newMsg;
+	}
+	//maintain size as under 10
+	if((llist.size+1) > 10){
+		msg* tmp = llist.head;
+		llist.head = (llist.head)->next;
+		free(tmp);
+	}else llist.size++;
+	pthread_mutex_unlock(&readOK);
+
+	EXIT:
+	//send header(isError)
+	if(!send(conn, &isError, sizeof(isError), 0)){
+        perror("[cannot send head(error)]");
     }
-    
-    printf("dest: %s\n", destPath);
-    
-    //open the file
-    if((srcFile = fopen(destPath, "wb")) == NULL){
-        perror("[cannot make file]");
-        close(conn);
-        return EXIT_FAILURE;
-    }
+	printf("> [INPUT] recv: \"%s\" : %ld, savedMsg: %d\n", newMsg->contents, newMsg->timestamp.tv_sec, llist.size);
 
-    while ((s = recv(conn, buf, BUFSIZE-1, 0))) {
-        buf[s]=0;
-        if(!fwrite(buf, 1, s, srcFile)) break;
-        // printf("%s", buf);
-    }
+	shutdown(conn, SHUT_WR);
+	close(conn);
+	printf("> [INPUT] socket closed\n");
+	return NULL;
 
-    fclose(srcFile);
-
-}
-
-
-void* runner(void* arg){
-
-
-    int conn = *(int*)arg;
-    free(arg);
-
-    int s = 0;
-    char srcPath[BUFSIZE];
-    char destPath[BUFSIZE];
-    char buf[BUFSIZE] ;
-    
-    //recv the header from client
-    struct client_header cheader;
-    if(!recv(conn, &cheader, sizeof(cheader), 0)){
-        perror("[cannot read header: cmd]");
-        close(conn);
-        return NULL;
-    }
-
-    switch (cheader.command){
-
-    case list:
-
-        printf("> list request accepted\n");
-        if(listFiles(homePath, conn)){
-            perror("cannot list the files\n");
-        }
-        shutdown(conn, SHUT_WR) ;
-        break;
-
-    case get:
-        printf("> get request accepted\n");
-        if(showFile(cheader, conn)){
-            perror("cannot get the files\n");
-        }
-        shutdown(conn, SHUT_WR) ;
-        break;
-
-    case put:
-        printf("> put request accepted\n");
-        if(putFile(cheader, conn)){
-            perror("cannot put the files\n");
-        }
-        shutdown(conn, SHUT_WR) ;
-        break;
-
-    case show:
-
-        printf("> show request accepted\n");
-        if(showFile(cheader, conn)){
-            perror("cannot show the file\n");
-        }
-        shutdown(conn, SHUT_WR) ;
-        break;
-    
-    default:
-        break;
-    }
-    
-    printf("done......\n");
-    close(conn);
-    return NULL;
 }
 
 
 int main(int argc, char** argv){
 
-    if(argc < 4){
+    if(argc < 2){
         printf("[server] invalid command\n");
-        printf("usasg: \n");
+        printf("usasg: server [port]\n");
         return EXIT_FAILURE;
-    }
-    
-    //TODO getopt 
-    //-p port, -d directory, & <-background execution 
-    port = atoi(argv[2]); 
-    homePath = (char*)malloc(sizeof(char)*strlen(argv[4]) + 1);
-    strcpy(homePath, argv[4]); 
-    printf("port: %d path: %s\n", port, homePath);
-
-
-	int listen_fd, new_socket;
-	struct sockaddr_in address; 
-	int opt = 1; 
-	int addrlen = sizeof(address); 
-
-	char buffer[BUFSIZE] = {0}; 
-
-	listen_fd = socket(AF_INET /*IPv4*/, SOCK_STREAM /*TCP*/, 0 /*IP*/) ;
-	if (listen_fd == 0)  { 
-		perror("socket failed : "); 
-        free(homePath);
-		exit(EXIT_FAILURE); 
+    }else{
+		port = atoi(argv[1]); 
+    	printf("server opend -> port: %d\n", port);
 	}
 
+	llist.head = NULL;
+	llist.tail = NULL;
+	llist.size = 0;
+
+	pthread_mutex_init(&readOK, NULL);
+	pthread_mutex_init(&writeOK, NULL);
+	pthread_mutex_lock(&readOK);
 	
+	//make socket and bind
+	int listen_fd, new_socket;
+	struct sockaddr_in address; 
 	memset(&address, '0', sizeof(address)); 
 	address.sin_family = AF_INET; 
-	address.sin_addr.s_addr = INADDR_ANY /* the localhost*/ ; 
+	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons(port); 
+	int addrlen = sizeof(address);
+
+	if ((listen_fd = socket(AF_INET , SOCK_STREAM, 0)) == 0)  { 
+		perror("socket failed : "); 
+		exit(EXIT_FAILURE); 
+	}
 	if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
 		perror("bind failed : "); 
-        free(homePath);
 		exit(EXIT_FAILURE); 
 	} 
 
+	//listen for access, when accepted, make new thread for it 
 	while (1) {
-         
-		if (listen(listen_fd, 16 /* the size of waiting queue*/) < 0) { 
+
+		if (listen(listen_fd, 20) < 0) { 
 			perror("listen failed"); 
-            free(homePath);
+			exit(EXIT_FAILURE); 
+		}
+		if ((new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen)) < 0) {
+			perror("accept failed"); 
+			exit(EXIT_FAILURE); 
+		}
+        
+		//make new socket instance
+        int* passing_sock  = (int*)malloc(sizeof(int));
+        (*passing_sock) = new_socket;
+
+		//get mode from header first 
+		int mode;
+		if(!recv(new_socket, &mode, sizeof(mode), 0)){
+			perror("[cannot recv mode]"); 
 			exit(EXIT_FAILURE); 
 		}
 
-        new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen) ;
-		if (new_socket < 0) {
-			perror("accept"); 
-            free(homePath);
-			exit(EXIT_FAILURE); 
-		} 
-
-        printf("> someone is here... %d\n", address.sin_port);
-
-        int* passing_sock  = (int*)malloc(sizeof(int));
-        (*passing_sock) = new_socket;
-        pthread_t client_pid;
-        if(pthread_create(&client_pid, NULL, (void*)runner, (void*)passing_sock)){
-            perror("make new thread");
-            free(homePath);
-            close(new_socket);
-        }
-        
+		//make thread depends on mode recevd 
+        pthread_t new_pid;
+		if(mode == MODE_INPUT){
+			printf("> [INPUT] someone is connected... %d\n", address.sin_port);
+			if(pthread_create(&new_pid, NULL, (void*)getMsgs, (void*)passing_sock)){
+				perror("cannot make thread");
+				close(new_socket);
+			}
+		}else if(mode == MODE_OUTPUT){
+			printf("> [OUTPUT] someone is connected... %d\n", address.sin_port);
+			if(pthread_create(&new_pid, NULL, (void*)sendMsgs, (void*)passing_sock)){
+				perror("cannot make new thread");
+				close(new_socket);
+			}
+		}
 	}
     
-
-    free(homePath);
+	//TODO is it meaningful..?
+	pthread_mutex_destroy(&readOK);
+	pthread_mutex_destroy(&writeOK);
     return EXIT_SUCCESS;
 
 }
