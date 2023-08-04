@@ -9,7 +9,6 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-
 #define THEME GREEN
 #define BUFSIZE 512
 const int MODE_INPUT = 0;
@@ -29,7 +28,6 @@ char errorMsg[BUFSIZE];
 char* ip;
 int port = 0;
 
-// TODO how to use...?
 int send_bytes(int fd, char * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
@@ -62,10 +60,9 @@ int recv_bytes(int fd, char * buf, size_t len){
 
 //get ip and port from args
 void getIpAndPort(char** args){
-	
+
 	ip = (char*)malloc(sizeof(char)*strlen(args[1])+1);
     strcpy(ip, args[1]);
-
     int index = 0;
     for(int i = 0; i < strlen(ip); i++) if(ip[i] == ':') index = i;
     ip[index] = 0;
@@ -106,15 +103,13 @@ int makeConnection(){
 void init(){
 
 	initscr();
-
     start_color(); //for using color option
 	init_pair(0, COLOR_WHITE, COLOR_BLACK); //set color themes
     init_pair(1, COLOR_BLUE, COLOR_WHITE);
     init_pair(2, COLOR_GREEN, COLOR_WHITE);
     init_pair(3, COLOR_RED, COLOR_WHITE);
+	bkgd(COLOR_PAIR(THEME));//select theme
     curs_set(2); //set corsor's visibility (0: invisible, 1: normal, 2: very visible)
-
-    // noecho(); //turn off the echo (for control the screen)
     keypad(stdscr, TRUE); //enable to reading a function keys 
 	cbreak(); //accept the special characters... 
 	echo();
@@ -228,14 +223,15 @@ void* outputBox(void* ss){
 	char buf[BUFSIZE];
 	int conn;
 	int s;
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	struct timeval lastTime = now;
-	
-	while(1){
+	struct timeval lastTime;
+	lastTime.tv_sec = 0;
+	int i = 0;
 
+	while(1){
 		if(done) break;
-		
+		mvprintw(0, 0, "[%d] lasttime: %d", i++, lastTime.tv_sec);
+		refresh();
+
 		if(!(conn = makeConnection())){
 			isError = 1;
 			return NULL;
@@ -250,27 +246,28 @@ void* outputBox(void* ss){
 		shutdown(conn, SHUT_WR);
 
 		//TODO modify to get all the msg server sent at once
-		int len = 0;
-		//recv header
-		if(!(s = recv(conn, &len, sizeof(len), 0)) || !(s = recv(conn, &lastTime, sizeof(lastTime), 0))){
-			strcpy(errorMsg, " [cannot recv header]\n");
-			isError = 1;
-			return NULL;
+		while(1){
+			if(done) break;
+			int len = 0;
+			//recv header
+			if((s = recv(conn, &len, sizeof(len), 0)) == -1 || (s = recv(conn, &lastTime, sizeof(lastTime), 0)) == -1){
+				strcpy(errorMsg, " [cannot recv header]\n");
+				isError = 1;
+				return NULL;
+			}
+			if(s == 0) break;
+			//recv payload
+			if((s = recv(conn, buf, len, 0)) == -1){
+				strcpy(errorMsg, " [cannot recv payload]\n");
+				isError = 1;
+				return NULL;
+			}
+			buf[s] = 0;
+			wprintw(server, " %s (%ld:%ld)\n", buf, lastTime.tv_sec, lastTime.tv_usec);
+			wrefresh(server);
+			refresh();
 		}
-		//recv payload
-		if(!(s = recv(conn, buf, len, 0))){
-			strcpy(errorMsg, " [cannot recv payload]\n");
-			isError = 1;
-			return NULL;
-		}
-		buf[s] = 0;
-
-		wprintw(server, "[server] %s\n", buf);
-		
-		wrefresh(server);
-		refresh();
 		close(conn);
-		
 	}
 	return NULL;
 }
@@ -279,7 +276,6 @@ int main(int argc, char *argv[]) {
 
 	//init windows
 	init();
-    bkgd(COLOR_PAIR(THEME));//select theme
 	init_main();
 
 	WINDOW* server = newwin(19, COLS-2, 4, 1);
@@ -312,7 +308,6 @@ int main(int argc, char *argv[]) {
 	}
 	refresh();
 
-
 	//exit
 	pthread_join(client_pid, NULL);
 	noecho();
@@ -322,16 +317,15 @@ int main(int argc, char *argv[]) {
 		wrefresh(server);
 		goto EXIT;
 	}
-	
 	mvwprintw(client, 0, 0, " Good bye :)");
 	
 	EXIT:
-	wprintw(server, " press any key to exit…");
+	wprintw(server, " press any key to exit... ");
 	wrefresh(client);
 	wrefresh(server);
 
 	getch();
-	
+
 	free(ip);
 	delwin(client);
 	delwin(server);

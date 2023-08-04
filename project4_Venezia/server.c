@@ -6,9 +6,8 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <pthread.h> 
-
 #include <netinet/in.h> 
-#include <libgen.h>
+#include <errno.h>
 
 #define BUFSIZE 512
 #define DEBUG
@@ -18,7 +17,7 @@ const int SUCCESS = 0;
 const int FAILURE = 1;
 
 int port = 0;
-pthread_mutex_t readOK, writeOK;
+pthread_rwlock_t mutex;
 
 
 typedef struct message{
@@ -66,11 +65,11 @@ int recv_bytes(int fd, char * buf, size_t len){
 }
 
 /* compair two timeval
-return 0 if a > b, 
-return 1 if a <= b */
+return 0 if a >= b, 
+return 1 if a < b */
 int comp(struct timeval a, struct timeval b){
-	if(a.tv_sec != b.tv_sec) return (a.tv_sec <= b.tv_sec);
-	else return (a.tv_usec <= b.tv_usec);
+	if(a.tv_sec != b.tv_sec) return (a.tv_sec < b.tv_sec);
+	else return (a.tv_usec < b.tv_usec);
 }
 
 // for output client (MODE_OUTPUT)-> send messages after recv timestamp
@@ -86,37 +85,51 @@ void* sendMsgs(void* con){
 		goto EXIT;
     }
 
+	int s;
+
 	// see all the llist, send it when timestamp is larger then recv stamp
 	while(1){
+		// s = recv(conn, NULL, 4, 0);
+		// if(s == 0) printf("> 	[OUTPUT] shutdowned\n");
+		// else if(s == -1) {
+		// 	printf("> 	[OUTPUT] disconnected\n");
+		// 	break;
+		// }else printf("> 	[OUTPUT] what the\n");
+
 		int sendCount = 0;
-		sleep(1);
-		pthread_mutex_lock(&readOK);
+		pthread_rwlock_rdlock(&mutex);
 		for(msg* p = llist.head; p != NULL; p = p->next){
-			printf("> [OUTPUT] compair %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
 			if(comp(pivot, p->timestamp)){
+				printf("> 	[OUTPUT] compaired %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
 				sendCount++;
 				int len = strlen(p->contents);
 				//send header:payloadsize
-				if(!send(conn, &len, sizeof(len), 0)){
+				if((s = send(conn, &len, sizeof(len), 0)) == -1){
 					perror("[cannot send header(size)]");
 					goto EXIT;
 				}
+				if(s == 0 || errno == EPIPE){
+					printf("> 	[OUTPUT] client disonnected\n");
+					goto EXIT;
+				}
 				//send header:timestamp
-				if(!send(conn, &(p->timestamp), sizeof(p->timestamp), 0)){
+				if((s =send(conn, &(p->timestamp), sizeof(p->timestamp), 0)) == -1){
 					perror("[cannot send header(timestamp)]");
 					goto EXIT;
 				}
 				//send payload
-				if(!send(conn, p->contents, len, 0)){
+				if((s = send(conn, p->contents, len, 0)) == -1){
 					perror("[cannot send payload]");
 					goto EXIT;
 				}
-				printf("> [OUTPUT] send: \"%s\" : %ld, savedMsg: %d\n", p->contents, p->timestamp.tv_sec, llist.size);
+				printf("> 	[OUTPUT] send: \"%s\" : %ld, savedMsg: %d\n", p->contents, p->timestamp.tv_sec, llist.size);
 			}
 		}
-		printf("> [OUTPUT] %d msg sended...\n", sendCount);
-		pthread_mutex_unlock(&writeOK);
-		if(sendCount != 0) break;
+		pthread_rwlock_unlock(&mutex);
+		if(sendCount != 0) {
+			printf("> 	[OUTPUT] %d msg sended\n", sendCount);
+			break;
+		}
 	}
 
 	EXIT:
@@ -153,7 +166,7 @@ void* getMsgs(void* con){
 	buf[s] = 0;
 
 	//make the msg and save buf, add to llist
-	pthread_mutex_lock(&writeOK);
+	pthread_rwlock_wrlock(&mutex);
 	msg* newMsg = (msg*)malloc(sizeof(msg));
 	gettimeofday(&(newMsg->timestamp), NULL);
 	strcpy(newMsg->contents, buf);
@@ -171,14 +184,14 @@ void* getMsgs(void* con){
 		llist.head = (llist.head)->next;
 		free(tmp);
 	}else llist.size++;
-	pthread_mutex_unlock(&readOK);
+	pthread_rwlock_unlock(&mutex);
 
 	EXIT:
 	//send header(isError)
 	if(!send(conn, &isError, sizeof(isError), 0)){
         perror("[cannot send head(error)]");
     }
-	printf("> [INPUT] recv: \"%s\" : %ld, savedMsg: %d\n", newMsg->contents, newMsg->timestamp.tv_sec, llist.size);
+	printf("> 	[INPUT] recv: \"%s\" : %ld, savedMsg: %d\n", newMsg->contents, newMsg->timestamp.tv_sec, llist.size);
 
 	shutdown(conn, SHUT_WR);
 	close(conn);
@@ -203,9 +216,7 @@ int main(int argc, char** argv){
 	llist.tail = NULL;
 	llist.size = 0;
 
-	pthread_mutex_init(&readOK, NULL);
-	pthread_mutex_init(&writeOK, NULL);
-	pthread_mutex_lock(&readOK);
+	pthread_rwlock_init(&mutex, NULL);
 	
 	//make socket and bind
 	int listen_fd, new_socket;
@@ -266,8 +277,7 @@ int main(int argc, char** argv){
 	}
     
 	//TODO is it meaningful..?
-	pthread_mutex_destroy(&readOK);
-	pthread_mutex_destroy(&writeOK);
+	pthread_rwlock_destroy(&mutex);
     return EXIT_SUCCESS;
 
 }
