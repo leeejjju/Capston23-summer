@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define THEME GREEN
+#define THEME BLUE
 #define BUFSIZE 512
 const int MODE_INPUT = 0;
 const int MODE_OUTPUT = 1;
@@ -165,6 +165,12 @@ void* inputBox(void* c){
 			continue;
 		}
 
+		if(strlen(buf) <= 0){
+			werase(client);
+			wrefresh(client);
+			continue;
+		}
+
 		if(!(conn = makeConnection())){
 			isError = 1;
 			return NULL;
@@ -195,6 +201,7 @@ void* inputBox(void* c){
 
 		werase(client);
 		wrefresh(client);
+		close(conn);
 	}
 
 	return NULL;
@@ -212,7 +219,7 @@ void init_outputBox(WINDOW* server){
 	wbkgd(server, COLOR_PAIR(THEME));
 	idlok(server, TRUE);
 	scrollok(server, TRUE);
-	wprintw(server, "enter \"quit\" to exit!\n");
+	wprintw(server, " enter \"quit\" to exit!\n");
 	wrefresh(server);
 	refresh();
 }
@@ -245,7 +252,6 @@ void* outputBox(void* ss){
 		}
 		shutdown(conn, SHUT_WR);
 
-		//TODO modify to get all the msg server sent at once
 		while(1){
 			if(done) break;
 			int len = 0;
@@ -263,7 +269,7 @@ void* outputBox(void* ss){
 				return NULL;
 			}
 			buf[s] = 0;
-			wprintw(server, " %s (%ld:%ld)\n", buf, lastTime.tv_sec, lastTime.tv_usec);
+			wprintw(server, " (%ld:%ld) %s\n", lastTime.tv_sec, lastTime.tv_usec, buf);
 			wrefresh(server);
 			refresh();
 		}

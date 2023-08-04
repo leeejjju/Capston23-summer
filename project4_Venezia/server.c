@@ -89,16 +89,11 @@ void* sendMsgs(void* con){
 
 	// see all the llist, send it when timestamp is larger then recv stamp
 	while(1){
-		// s = recv(conn, NULL, 4, 0);
-		// if(s == 0) printf("> 	[OUTPUT] shutdowned\n");
-		// else if(s == -1) {
-		// 	printf("> 	[OUTPUT] disconnected\n");
-		// 	break;
-		// }else printf("> 	[OUTPUT] what the\n");
 
 		int sendCount = 0;
 		pthread_rwlock_rdlock(&mutex);
 		for(msg* p = llist.head; p != NULL; p = p->next){
+
 			if(comp(pivot, p->timestamp)){
 				printf("> 	[OUTPUT] compaired %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
 				sendCount++;
@@ -122,7 +117,7 @@ void* sendMsgs(void* con){
 					perror("[cannot send payload]");
 					goto EXIT;
 				}
-				printf("> 	[OUTPUT] send: \"%s\" : %ld, savedMsg: %d\n", p->contents, p->timestamp.tv_sec, llist.size);
+				printf("> 	[OUTPUT] send: \"%s\" : %ld\n", p->contents, p->timestamp.tv_sec);
 			}
 		}
 		pthread_rwlock_unlock(&mutex);
@@ -139,7 +134,6 @@ void* sendMsgs(void* con){
 	return NULL;
 
 }
-
 
 // for input client (MODE_INPUT)-> recv messages form client and save it on saved list 
 void* getMsgs(void* con){
@@ -174,10 +168,10 @@ void* getMsgs(void* con){
 
 	if(llist.size == 0) {
 		llist.head = newMsg;
-		llist.tail = newMsg;
 	}else{
 		(llist.tail)->next = newMsg;
 	}
+	llist.tail = newMsg;
 	//maintain size as under 10
 	if((llist.size+1) > 10){
 		msg* tmp = llist.head;
@@ -191,7 +185,7 @@ void* getMsgs(void* con){
 	if(!send(conn, &isError, sizeof(isError), 0)){
         perror("[cannot send head(error)]");
     }
-	printf("> 	[INPUT] recv: \"%s\" : %ld, savedMsg: %d\n", newMsg->contents, newMsg->timestamp.tv_sec, llist.size);
+	printf("> 	[INPUT] recv: \"%s\" : %ld\n", newMsg->contents, newMsg->timestamp.tv_sec);
 
 	shutdown(conn, SHUT_WR);
 	close(conn);
@@ -199,7 +193,6 @@ void* getMsgs(void* con){
 	return NULL;
 
 }
-
 
 int main(int argc, char** argv){
 
