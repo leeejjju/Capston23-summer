@@ -34,7 +34,7 @@ struct linked_list{
 
 
 // TODO how to use...?
-int send_bytes(int fd, char * buf, size_t len){
+int send_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
 
@@ -42,26 +42,26 @@ int send_bytes(int fd, char * buf, size_t len){
         size_t sent ;
         sent = send(fd, p, len - acc, 0) ;
         if (sent == -1)
-                return 1 ;
+                return 0 ;
         p += sent ;
         acc += sent ;
     }
-    return 0 ;
+    return acc ;
 }
 
-int recv_bytes(int fd, char * buf, size_t len){
+int recv_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
 
     while (acc < len) {
         size_t sent ;
         sent = recv(fd, p, len - acc, 0) ;
-        if (sent == -1)
+        if (sent == 0)
                 return 1 ;
         p += sent ;
         acc += sent ;
     }
-    return 0 ;
+    return acc ;
 }
 
 /* compair two timeval
@@ -80,7 +80,7 @@ void* sendMsgs(void* con){
 
 	//recv header(timestamp)
 	struct timeval pivot;
-	if(!recv(conn, &pivot, sizeof(pivot), 0)){
+	if(!recv_bytes(conn, (void*)&pivot, sizeof(pivot))){
         perror("[cannot recv header(timestamp)]");
 		goto EXIT;
     }
@@ -98,8 +98,8 @@ void* sendMsgs(void* con){
 				printf("> 	[OUTPUT] compaired %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
 				sendCount++;
 				int len = strlen(p->contents);
-				//send header:payloadsize
-				if((s = send(conn, &len, sizeof(len), 0)) == -1){
+				//send header:textsize
+				if((s = send_bytes(conn, (void*)&len, sizeof(len))) == -1){
 					perror("[cannot send header(size)]");
 					goto EXIT;
 				}
@@ -108,13 +108,13 @@ void* sendMsgs(void* con){
 					goto EXIT;
 				}
 				//send header:timestamp
-				if((s =send(conn, &(p->timestamp), sizeof(p->timestamp), 0)) == -1){
+				if((s =send_bytes(conn, (void*)&(p->timestamp), sizeof(p->timestamp))) == -1){
 					perror("[cannot send header(timestamp)]");
 					goto EXIT;
 				}
-				//send payload
-				if((s = send(conn, p->contents, len, 0)) == -1){
-					perror("[cannot send payload]");
+				//send text
+				if((s = send_bytes(conn, (void*)p->contents, len)) == -1){
+					perror("[cannot send text]");
 					goto EXIT;
 				}
 				printf("> 	[OUTPUT] send: \"%s\" : %ld\n", p->contents, p->timestamp.tv_sec);
@@ -145,15 +145,15 @@ void* getMsgs(void* con){
 	char buf[BUFSIZE];
 
 	//recv header
-	if(!recv(conn, &len, sizeof(len), 0)){
+	if(!recv_bytes(conn, (void*)&len, sizeof(len))){
         perror("[cannot recv header]");
 		isError = 1;
 		goto EXIT;
     }
 	
-	//recv payload
-	if(!(s = recv(conn, buf, len, 0))){
-        perror("[cannot recv payload]");
+	//recv text
+	if(!(s = recv_bytes(conn, (void*)buf, len))){
+        perror("[cannot recv text]");
 		isError = 1;
 		goto EXIT;
     }
@@ -182,7 +182,7 @@ void* getMsgs(void* con){
 
 	EXIT:
 	//send header(isError)
-	if(!send(conn, &isError, sizeof(isError), 0)){
+	if(!send_bytes(conn, (void*)&isError, sizeof(isError))){
         perror("[cannot send head(error)]");
     }
 	printf("> 	[INPUT] recv: \"%s\" : %ld\n", newMsg->contents, newMsg->timestamp.tv_sec);

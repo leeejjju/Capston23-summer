@@ -5,6 +5,7 @@
 #include <pthread.h> 
 #include <sys/socket.h> 
 #include <sys/time.h>
+#include <time.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <arpa/inet.h>
@@ -185,9 +186,9 @@ void* inputBox(void* c){
 			isError = 1;
 			return NULL;
 		}
-		//send payload 
+		//send text 
 		if(!(s = send(conn, buf, len, 0))){
-			strcpy(errorMsg, " [cannot send payload]\n");
+			strcpy(errorMsg, " [cannot send text]\n");
 			isError = 1;
 			return NULL;
 		}
@@ -229,10 +230,10 @@ void* outputBox(void* ss){
 	WINDOW *server = (WINDOW*)ss;
 	char buf[BUFSIZE];
 	int conn;
-	int s;
+	int s, i = 0;
 	struct timeval lastTime;
+	struct tm* time = (struct tm*)malloc(sizeof(struct tm));
 	lastTime.tv_sec = 0;
-	int i = 0;
 
 	while(1){
 		if(done) break;
@@ -262,19 +263,21 @@ void* outputBox(void* ss){
 				return NULL;
 			}
 			if(s == 0) break;
-			//recv payload
+			//recv text
 			if((s = recv(conn, buf, len, 0)) == -1){
-				strcpy(errorMsg, " [cannot recv payload]\n");
+				strcpy(errorMsg, " [cannot recv text]\n");
 				isError = 1;
 				return NULL;
 			}
-			buf[s] = 0;
-			wprintw(server, " (%ld:%ld) %s\n", lastTime.tv_sec, lastTime.tv_usec, buf);
+			if(s < BUFSIZE) buf[s] = 0;
+			time = localtime(&(lastTime.tv_sec));
+			wprintw(server, " [%d:%d:%d] %s\n", ((time->tm_hour > 12)? (time->tm_hour -12): time->tm_hour) , time->tm_min, time->tm_sec, buf);
 			wrefresh(server);
 			refresh();
 		}
 		close(conn);
 	}
+	free(time);
 	return NULL;
 }
 
