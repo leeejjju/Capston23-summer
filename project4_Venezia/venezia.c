@@ -29,34 +29,34 @@ char errorMsg[BUFSIZE];
 char* ip;
 int port = 0;
 
-int send_bytes(int fd, char * buf, size_t len){
+int send_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
 
     while (acc < len) {
         size_t sent ;
-        sent = send(fd, p, len - acc, 0) ;
-        if (sent == -1)
-                return 1 ;
+        sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
+        if (sent == 0)
+                return 0 ;
         p += sent ;
         acc += sent ;
     }
-    return 0 ;
+    return acc ;
 }
 
-int recv_bytes(int fd, char * buf, size_t len){
+int recv_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
 
     while (acc < len) {
         size_t sent ;
-        sent = recv(fd, p, len - acc, 0) ;
-        if (sent == -1)
-                return 1 ;
+        sent = recv(fd, p, len - acc, MSG_NOSIGNAL) ;
+        if (sent == 0)
+                return 0 ;
         p += sent ;
         acc += sent ;
     }
-    return 0 ;
+    return acc ;
 }
 
 //get ip and port from args
@@ -157,9 +157,9 @@ void* inputBox(void* c){
 			done = 1;
 		}
 
-		if(strlen(buf) > 512){
+		if(strlen(buf) > 512 || strlen(buf) == 0){
 			werase(client);
-			mvwprintw(client, 0, 0, " too long to send :(");
+			mvwprintw(client, 0, 0, " cannot send :(");
 			getch();
 			werase(client);
 			wrefresh(client);
@@ -181,20 +181,20 @@ void* inputBox(void* c){
 
 		//TODO modify with send_bytes... 
 		//send header
-		if(!(s = send(conn, &MODE_INPUT, sizeof(int), 0)) || !(s = send(conn, &len, sizeof(int), 0))){
+		if(!(s = send_bytes(conn, (void*)&MODE_INPUT, sizeof(int))) || !(s = send_bytes(conn, (void*)&len, sizeof(int)))){
 			strcpy(errorMsg, " [cannot send header]\n");
 			isError = 1;
 			return NULL;
 		}
 		//send text 
-		if(!(s = send(conn, buf, len, 0))){
+		if(!(s = send_bytes(conn, (void*)buf, len))){
 			strcpy(errorMsg, " [cannot send text]\n");
 			isError = 1;
 			return NULL;
 		}
 		shutdown(conn, SHUT_WR);
 
-		if(!(s = recv(conn, &isError, sizeof(int), 0)) || isError){
+		if(!(s = recv_bytes(conn, (void*)&isError, sizeof(int))) || isError){
 			strcpy(errorMsg, " [error on server]\n");
 			isError = 1;
 			return NULL;
@@ -246,7 +246,7 @@ void* outputBox(void* ss){
 		}
 
 		//send header
-		if(!(s = send(conn, &MODE_OUTPUT, sizeof(MODE_OUTPUT), 0)) || !(s = send(conn, &lastTime, sizeof(lastTime), 0))){
+		if(!(s = send_bytes(conn, (void*)&MODE_OUTPUT, sizeof(MODE_OUTPUT))) || !(s = send_bytes(conn, (void*)&lastTime, sizeof(lastTime)))){
 			strcpy(errorMsg, " [cannot send header]\n");
 			isError = 1;
 			return NULL;
@@ -264,7 +264,7 @@ void* outputBox(void* ss){
 			}
 			if(s == 0) break;
 			//recv text
-			if((s = recv(conn, buf, len, 0)) == -1){
+			if(!(s = recv(conn, buf, len, 0))){
 				strcpy(errorMsg, " [cannot recv text]\n");
 				isError = 1;
 				return NULL;

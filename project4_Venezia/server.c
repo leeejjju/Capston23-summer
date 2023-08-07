@@ -33,14 +33,13 @@ struct linked_list{
 } llist;
 
 
-// TODO how to use...?
 int send_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
     size_t acc = 0 ;
 
     while (acc < len) {
         size_t sent ;
-        sent = send(fd, p, len - acc, 0) ;
+        sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
         if (sent == -1)
                 return 0 ;
         p += sent ;
@@ -55,9 +54,9 @@ int recv_bytes(int fd, void * buf, size_t len){
 
     while (acc < len) {
         size_t sent ;
-        sent = recv(fd, p, len - acc, 0) ;
+        sent = recv(fd, p, len - acc, MSG_NOSIGNAL) ;
         if (sent == 0)
-                return 1 ;
+                return 0 ;
         p += sent ;
         acc += sent ;
     }
@@ -70,6 +69,10 @@ return 1 if a < b */
 int comp(struct timeval a, struct timeval b){
 	if(a.tv_sec != b.tv_sec) return (a.tv_sec < b.tv_sec);
 	else return (a.tv_usec < b.tv_usec);
+}
+
+void addNewMsg(char* buf){
+	
 }
 
 // for output client (MODE_OUTPUT)-> send messages after recv timestamp
@@ -95,7 +98,7 @@ void* sendMsgs(void* con){
 		for(msg* p = llist.head; p != NULL; p = p->next){
 
 			if(comp(pivot, p->timestamp)){
-				printf("> 	[OUTPUT] compaired %ld and %ld...\n",pivot.tv_sec, (p->timestamp).tv_sec);
+				printf("> 	[OUTPUT:%d] compaired %ld and %ld...\n", conn, pivot.tv_sec, (p->timestamp).tv_sec);
 				sendCount++;
 				int len = strlen(p->contents);
 				//send header:textsize
@@ -104,7 +107,7 @@ void* sendMsgs(void* con){
 					goto EXIT;
 				}
 				if(s == 0 || errno == EPIPE){
-					printf("> 	[OUTPUT] client disonnected\n");
+					printf("> 	[OUTPUT:%d] client disonnected\n", conn);
 					goto EXIT;
 				}
 				//send header:timestamp
@@ -117,7 +120,7 @@ void* sendMsgs(void* con){
 					perror("[cannot send text]");
 					goto EXIT;
 				}
-				printf("> 	[OUTPUT] send: \"%s\" : %ld\n", p->contents, p->timestamp.tv_sec);
+				printf("> 	[OUTPUT:%d] send: \"%s\" : %ld\n", conn, p->contents, p->timestamp.tv_sec);
 			}
 		}
 		pthread_rwlock_unlock(&mutex);
@@ -129,7 +132,7 @@ void* sendMsgs(void* con){
 
 	EXIT:
 	shutdown(conn, SHUT_WR);
-	printf("> [OUTPUT] socket closed --------------------------\n");
+	printf("> [OUTPUT:%d] socket closed --------------------------\n", conn);
 	close(conn);
 	return NULL;
 
@@ -185,11 +188,11 @@ void* getMsgs(void* con){
 	if(!send_bytes(conn, (void*)&isError, sizeof(isError))){
         perror("[cannot send head(error)]");
     }
-	printf("> 	[INPUT] recv: \"%s\" : %ld\n", newMsg->contents, newMsg->timestamp.tv_sec);
+	printf("> 	[INPUT%d] recv: \"%s\" : %ld\n", conn, newMsg->contents, newMsg->timestamp.tv_sec);
 
 	shutdown(conn, SHUT_WR);
+	printf("> [INPUT:%d] socket closed\n", conn);
 	close(conn);
-	printf("> [INPUT] socket closed\n");
 	return NULL;
 
 }
@@ -255,13 +258,13 @@ int main(int argc, char** argv){
 		//make thread depends on mode recevd 
         pthread_t new_pid;
 		if(mode == MODE_INPUT){
-			printf("> [INPUT] someone is connected... %d\n", address.sin_port);
+			printf("> [INPUT:%d] someone is connected... \n", *passing_sock);
 			if(pthread_create(&new_pid, NULL, (void*)getMsgs, (void*)passing_sock)){
 				perror("cannot make thread");
 				close(new_socket);
 			}
 		}else if(mode == MODE_OUTPUT){
-			printf("> [OUTPUT] someone is connected... %d\n", address.sin_port);
+			printf("> [OUTPUT:%d] someone is connected... \n", *passing_sock);
 			if(pthread_create(&new_pid, NULL, (void*)sendMsgs, (void*)passing_sock)){
 				perror("cannot make new thread");
 				close(new_socket);
