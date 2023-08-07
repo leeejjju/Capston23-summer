@@ -8,17 +8,12 @@
 #include <pthread.h> 
 #include <netinet/in.h> 
 #include <errno.h>
-
 #define BUFSIZE 512
-#define DEBUG
 #define MODE_INPUT 0
 #define MODE_OUTPUT 1
-const int SUCCESS = 0;
-const int FAILURE = 1;
 
 int port = 0;
 pthread_rwlock_t mutex;
-
 
 typedef struct message{
 	struct timeval timestamp;
@@ -41,7 +36,7 @@ int send_bytes(int fd, void * buf, size_t len){
         size_t sent ;
         sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
         if (sent == -1)
-                return 0 ;
+                return -1 ;
         p += sent ;
         acc += sent ;
     }
@@ -55,8 +50,8 @@ int recv_bytes(int fd, void * buf, size_t len){
     while (acc < len) {
         size_t sent ;
         sent = recv(fd, p, len - acc, MSG_NOSIGNAL) ;
-        if (sent == 0)
-                return 0 ;
+        if (sent == -1)
+                return -1 ;
         p += sent ;
         acc += sent ;
     }
@@ -72,7 +67,24 @@ int comp(struct timeval a, struct timeval b){
 }
 
 void addNewMsg(char* buf){
-	
+
+	msg* newMsg = (msg*)malloc(sizeof(msg));
+	gettimeofday(&(newMsg->timestamp), NULL);
+	strcpy(newMsg->contents, buf);
+	newMsg->next = NULL;
+
+	if(llist.size == 0) llist.head = newMsg;
+	else (llist.tail)->next = newMsg;
+	llist.tail = newMsg;
+
+	//maintain size as under 10
+	if((llist.size+1) > 10){
+		msg* tmp = llist.head;
+		llist.head = (llist.head)->next;
+		free(tmp);
+	}else llist.size++;
+
+	return;
 }
 
 // for output client (MODE_OUTPUT)-> send messages after recv timestamp
@@ -88,12 +100,11 @@ void* sendMsgs(void* con){
 		goto EXIT;
     }
 
-	int s;
-
 	// see all the llist, send it when timestamp is larger then recv stamp
+	// loop until send someting
 	while(1){
 
-		int sendCount = 0;
+		int sendCount = 0, s = 0;
 		pthread_rwlock_rdlock(&mutex);
 		for(msg* p = llist.head; p != NULL; p = p->next){
 
@@ -131,7 +142,6 @@ void* sendMsgs(void* con){
 	}
 
 	EXIT:
-	shutdown(conn, SHUT_WR);
 	printf("> [OUTPUT:%d] socket closed --------------------------\n", conn);
 	close(conn);
 	return NULL;
@@ -148,14 +158,14 @@ void* getMsgs(void* con){
 	char buf[BUFSIZE];
 
 	//recv header
-	if(!recv_bytes(conn, (void*)&len, sizeof(len))){
+	if(recv_bytes(conn, (void*)&len, sizeof(len)) == -1){
         perror("[cannot recv header]");
 		isError = 1;
 		goto EXIT;
     }
 	
 	//recv text
-	if(!(s = recv_bytes(conn, (void*)buf, len))){
+	if((s = recv_bytes(conn, (void*)buf, len)) == -1){
         perror("[cannot recv text]");
 		isError = 1;
 		goto EXIT;
@@ -164,33 +174,15 @@ void* getMsgs(void* con){
 
 	//make the msg and save buf, add to llist
 	pthread_rwlock_wrlock(&mutex);
-	msg* newMsg = (msg*)malloc(sizeof(msg));
-	gettimeofday(&(newMsg->timestamp), NULL);
-	strcpy(newMsg->contents, buf);
-	newMsg->next = NULL;
-
-	if(llist.size == 0) {
-		llist.head = newMsg;
-	}else{
-		(llist.tail)->next = newMsg;
-	}
-	llist.tail = newMsg;
-	//maintain size as under 10
-	if((llist.size+1) > 10){
-		msg* tmp = llist.head;
-		llist.head = (llist.head)->next;
-		free(tmp);
-	}else llist.size++;
+	addNewMsg(buf);
 	pthread_rwlock_unlock(&mutex);
 
 	EXIT:
 	//send header(isError)
-	if(!send_bytes(conn, (void*)&isError, sizeof(isError))){
+	if(send_bytes(conn, (void*)&isError, sizeof(isError)) == -1){
         perror("[cannot send head(error)]");
     }
-	printf("> 	[INPUT%d] recv: \"%s\" : %ld\n", conn, newMsg->contents, newMsg->timestamp.tv_sec);
-
-	shutdown(conn, SHUT_WR);
+	printf("> 	[INPUT:%d] recv: \"%s\" : %ld\n", conn, (llist.tail)->contents, (llist.tail)->timestamp.tv_sec);
 	printf("> [INPUT:%d] socket closed\n", conn);
 	close(conn);
 	return NULL;
@@ -208,6 +200,7 @@ int main(int argc, char** argv){
     	printf("server opend -> port: %d\n", port);
 	}
 
+	//init linked list
 	llist.head = NULL;
 	llist.tail = NULL;
 	llist.size = 0;
@@ -250,7 +243,7 @@ int main(int argc, char** argv){
 
 		//get mode from header first 
 		int mode;
-		if(!recv(new_socket, &mode, sizeof(mode), 0)){
+		if(recv_bytes(new_socket, (void*)&mode, sizeof(mode)) == -1){
 			perror("[cannot recv mode]"); 
 			exit(EXIT_FAILURE); 
 		}

@@ -10,7 +10,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define THEME BLUE
+#define THEME GREEN
 #define BUFSIZE 512
 const int MODE_INPUT = 0;
 const int MODE_OUTPUT = 1;
@@ -36,8 +36,8 @@ int send_bytes(int fd, void * buf, size_t len){
     while (acc < len) {
         size_t sent ;
         sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
-        if (sent == 0)
-                return 0 ;
+        if (sent == -1)
+                return -1 ;
         p += sent ;
         acc += sent ;
     }
@@ -50,9 +50,9 @@ int recv_bytes(int fd, void * buf, size_t len){
 
     while (acc < len) {
         size_t sent ;
-        sent = recv(fd, p, len - acc, MSG_NOSIGNAL) ;
-        if (sent == 0)
-                return 0 ;
+        sent = recv(fd, p, len - acc, 0) ;
+        if (sent == -1)
+                return -1 ;
         p += sent ;
         acc += sent ;
     }
@@ -178,23 +178,21 @@ void* inputBox(void* c){
 		}
 		int len = strlen(buf);
 		
-
-		//TODO modify with send_bytes... 
 		//send header
-		if(!(s = send_bytes(conn, (void*)&MODE_INPUT, sizeof(int))) || !(s = send_bytes(conn, (void*)&len, sizeof(int)))){
+		if((s = send_bytes(conn, (void*)&MODE_INPUT, sizeof(int))) == -1 || (s = send_bytes(conn, (void*)&len, sizeof(int))) == -1){
 			strcpy(errorMsg, " [cannot send header]\n");
 			isError = 1;
 			return NULL;
 		}
 		//send text 
-		if(!(s = send_bytes(conn, (void*)buf, len))){
+		if((s = send_bytes(conn, (void*)buf, len)) == -1){
 			strcpy(errorMsg, " [cannot send text]\n");
 			isError = 1;
 			return NULL;
 		}
 		shutdown(conn, SHUT_WR);
 
-		if(!(s = recv_bytes(conn, (void*)&isError, sizeof(int))) || isError){
+		if((s = recv_bytes(conn, (void*)&isError, sizeof(int))) == -1 || isError){
 			strcpy(errorMsg, " [error on server]\n");
 			isError = 1;
 			return NULL;
@@ -246,7 +244,7 @@ void* outputBox(void* ss){
 		}
 
 		//send header
-		if(!(s = send_bytes(conn, (void*)&MODE_OUTPUT, sizeof(MODE_OUTPUT))) || !(s = send_bytes(conn, (void*)&lastTime, sizeof(lastTime)))){
+		if((s = send_bytes(conn, (void*)&MODE_OUTPUT, sizeof(MODE_OUTPUT))) == -1 || (s = send_bytes(conn, (void*)&lastTime, sizeof(lastTime))) == -1){
 			strcpy(errorMsg, " [cannot send header]\n");
 			isError = 1;
 			return NULL;
@@ -257,14 +255,16 @@ void* outputBox(void* ss){
 			if(done) break;
 			int len = 0;
 			//recv header
+			//TODO recv_byte() does not work (whyy??)
 			if((s = recv(conn, &len, sizeof(len), 0)) == -1 || (s = recv(conn, &lastTime, sizeof(lastTime), 0)) == -1){
+			// if((s = recv_bytes(conn, (void*)&len, sizeof(len))) == -1 || (s = recv_bytes(conn, (void*)&lastTime, sizeof(lastTime))) == -1){
 				strcpy(errorMsg, " [cannot recv header]\n");
 				isError = 1;
 				return NULL;
 			}
 			if(s == 0) break;
 			//recv text
-			if(!(s = recv(conn, buf, len, 0))){
+			if((s = recv_bytes(conn, (void*)buf, len)) == -1){
 				strcpy(errorMsg, " [cannot recv text]\n");
 				isError = 1;
 				return NULL;
