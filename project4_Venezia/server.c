@@ -105,9 +105,13 @@ void* sendMsgs(void* con){
 	while(1){
 
 		int sendCount = 0, s = 0;
+		if( (llist.head == NULL) || comp(llist.tail->timestamp, pivot)){
+			sleep(1);
+			continue;
+		}
 		pthread_rwlock_rdlock(&mutex);
 		for(msg* p = llist.head; p != NULL; p = p->next){
-
+			
 			if(comp(pivot, p->timestamp)){
 				printf("> 	[OUTPUT:%d] compaired %ld and %ld...\n", conn, pivot.tv_sec, (p->timestamp).tv_sec);
 				sendCount++;
