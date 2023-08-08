@@ -192,11 +192,11 @@ void* inputBox(void* c){
 		}
 		shutdown(conn, SHUT_WR);
 
-		if((s = recv_bytes(conn, (void*)&isError, sizeof(int))) == -1 || isError){
-			strcpy(errorMsg, " [error on server]\n");
-			isError = 1;
-			return NULL;
-		}
+		// if((s = recv_bytes(conn, (void*)&isError, sizeof(int))) == -1 || isError){
+		// 	strcpy(errorMsg, " [error on server]\n");
+		// 	isError = 1;
+		// 	return NULL;
+		// }
 
 		werase(client);
 		wrefresh(client);
