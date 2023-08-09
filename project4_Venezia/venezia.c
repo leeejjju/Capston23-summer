@@ -9,11 +9,13 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <getopt.h>
 
-#define THEME GREEN
-#define BUFSIZE 512
+#define THEME BLUE
+#define BUFSIZE 128
 const int MODE_INPUT = 0;
 const int MODE_OUTPUT = 1;
+const int MODE_REGISTER = 2;
 
 typedef enum{
 	BLACK,
@@ -23,11 +25,18 @@ typedef enum{
 	NOP
 } color;
 
+typedef struct{
+	WINDOW* mainWin;
+	WINDOW* scoreWin;
+}windows;
+
 int isError = 0;
 int done = 0;
 char errorMsg[BUFSIZE];
-char* ip;
 int port = 0;
+
+char *ip = NULL, *port_str = NULL, *username = NULL, *password = NULL;
+
 
 int send_bytes(int fd, void * buf, size_t len){
     char * p = buf ;
@@ -59,7 +68,7 @@ int recv_bytes(int fd, void * buf, size_t len){
     return acc ;
 }
 
-//get ip and port from args
+//TODO remove it
 void getIpAndPort(char** args){
 
 	ip = (char*)malloc(sizeof(char)*strlen(args[1])+1);
@@ -70,6 +79,49 @@ void getIpAndPort(char** args){
     port = atoi(&ip[index+1]);
 
 	return;
+}
+
+void setUserInfo(int argc, char** argv){
+
+	int opt;
+
+	while ((opt = getopt(argc, argv, "hi:p:u:w:")) != -1) {
+		switch (opt) {
+		case 'h':
+			printf("Usage: client [options]\n\n"
+				"Options:\n"
+				"  -h, --help      Show this help message.\n"
+				"  -i, --ip         The IP address of the server.\n"
+				"  -p, --port       The port of the server.\n"
+				"  -u, --username  The username.\n"
+				"  -w, --password  The password.\n");
+			exit(0);
+		case 'i':
+			ip = optarg;
+			break;
+		case 'p':
+			port_str = optarg;
+			break;
+		case 'u':
+			username = optarg;
+			break;
+		case 'w':
+			password = optarg;
+			break;
+		default:
+			fprintf(stderr, "Unknown option: %c\n", optopt);
+			exit(1);
+		}
+	}
+
+	if (ip == NULL || port_str == NULL || username == NULL || password == NULL) {
+		fprintf(stderr, "Missing required option.\n");
+		exit(1);
+	}
+
+	port = atoi(port_str);
+
+	
 }
 
 //make new sock and connection with ip,port and return the sock_fd(0 on fail)
@@ -153,8 +205,8 @@ void* inputBox(void* c){
 
 		wgetstr(client, buf);
 		if(!strcmp(buf, "quit")){ 
-			break;
 			done = 1;
+			break;
 		}
 
 		if(strlen(buf) > 512 || strlen(buf) == 0){
@@ -192,12 +244,6 @@ void* inputBox(void* c){
 		}
 		shutdown(conn, SHUT_WR);
 
-		// if((s = recv_bytes(conn, (void*)&isError, sizeof(int))) == -1 || isError){
-		// 	strcpy(errorMsg, " [error on server]\n");
-		// 	isError = 1;
-		// 	return NULL;
-		// }
-
 		werase(client);
 		wrefresh(client);
 		close(conn);
@@ -207,7 +253,7 @@ void* inputBox(void* c){
 }
 
 //init outputbox window
-void init_outputBox(WINDOW* server){
+void init_outputBox(windows* server){
 
 	WINDOW* outBox = newwin(21, COLS, 3, 0);
 	wbkgd(outBox, COLOR_PAIR(THEME));
@@ -215,17 +261,37 @@ void init_outputBox(WINDOW* server){
 	wrefresh(outBox);
 	refresh();
 
-	wbkgd(server, COLOR_PAIR(THEME));
-	idlok(server, TRUE);
-	scrollok(server, TRUE);
-	wprintw(server, " enter \"quit\" to exit!\n");
-	wrefresh(server);
+	server->mainWin = newwin(19, (COLS-23), 4, 1);
+	wbkgd(server->mainWin, COLOR_PAIR(THEME));
+	idlok(server->mainWin, TRUE);
+	scrollok(server->mainWin, TRUE);
+	wprintw(server->mainWin, " enter \"quit\" to exit!\n");
+	wrefresh(server->mainWin);
 	refresh();
+
+	WINDOW* outBox2 = newwin(19, 20, 4, (COLS-22));
+	wbkgd(outBox2, COLOR_PAIR(THEME));
+	box(outBox2, ACS_VLINE, ACS_HLINE);
+	wrefresh(outBox2);
+	refresh();
+
+	server->scoreWin = newwin(17, 18, 5, (COLS-21));
+	wbkgd(server->scoreWin, COLOR_PAIR(THEME));
+	wprintw(server->scoreWin, " [score]\n");
+	wprintw(server->scoreWin, " ip: %s\n port: %s\n", ip, port_str);
+	wprintw(server->scoreWin, " user: %s\n pw: %s\n", username, password);
+	wrefresh(server->scoreWin);
+	refresh();
+
 }
 
 void* outputBox(void* ss){
 
-	WINDOW *server = (WINDOW*)ss;
+	windows* wins = (windows*) ss;
+	WINDOW* server = wins->mainWin;
+	WINDOW* scoreWin = wins->scoreWin;
+
+
 	char buf[BUFSIZE];
 	int conn;
 	int s, i = 0;
@@ -283,36 +349,69 @@ void* outputBox(void* ss){
 
 int main(int argc, char *argv[]) {
 
+	//get username and password
+	setUserInfo(argc, argv);
+
 	//init windows
 	init();
 	init_main();
-
-	WINDOW* server = newwin(19, COLS-2, 4, 1);
-	init_outputBox(server);
+	windows server;
+	init_outputBox(&server);
 	WINDOW* client = newwin(1, COLS-2, 25, 1);
 	init_inputBox(client);
 	refresh();
 
-	//check argvs andn get information from it 
-    if(argc < 2){
-		mvwprintw(server, 0, 0, " invalid command!\n\n usage: venezia [ip]:[port]\n");
-		wrefresh(server);
-		goto EXIT;
-    }else getIpAndPort(argv);
+	// check argvs and get information from it 
+    // if(argc < 2){
+	// 	mvwprintw(server.mainWin, 0, 0, " invalid command!\n\n usage: venezia [ip]:[port]\n");
+	// 	wrefresh(server.mainWin);
+	// 	goto EXIT;
+    // }else getIpAndPort(argv);
+
+
+	// int conn, s, len;
+	// if(!(conn = makeConnection())){
+	// 	mvwprintw(server.mainWin, 0, 0, " [cannot make connection]\n");
+	// 	wrefresh(server.mainWin);
+	// 	close(conn);
+	// 	goto EXIT;
+	// }
+	// //send mode
+	// if((s = send_bytes(conn, (void*)&MODE_REGISTER, sizeof(int))) == -1 || (s = send_bytes(conn, (void*)&len, sizeof(int))) == -1){
+	// 	mvwprintw(server.mainWin, 0, 0, " [cannot send mode]\n");
+	// 	wrefresh(server.mainWin);
+	// 	close(conn);
+	// 	goto EXIT;
+	// }
+	// //send userinfo
+	// if((s = send_bytes(conn, (void*)username, sizeof(username))) == -1 || (s = send_bytes(conn, (void*)&len, sizeof(int))) == -1){
+	// 	mvwprintw(server.mainWin, 0, 0, " [cannot send userinfo]\n");
+	// 	wrefresh(server.mainWin);
+	// 	close(conn);
+	// 	goto EXIT;
+	// }
+	// if((s = send_bytes(conn, (void*)password, sizeof(password))) == -1 || (s = send_bytes(conn, (void*)&len, sizeof(int))) == -1){
+	// 	mvwprintw(server.mainWin, 0, 0, " [cannot send userinfo]\n");
+	// 	wrefresh(server.mainWin);
+	// 	close(conn);
+	// 	goto EXIT;
+	// }
+	// close(conn);
+
 
 	//make threads
 	pthread_t client_pid;
 	if(pthread_create(&client_pid, NULL, (void*)inputBox, (void*)client)){
 		perror("make new thread");
-		mvwprintw(server, 0, 0, " make thread failed\n");
-		wrefresh(server);
+		mvwprintw(server.mainWin, 0, 0, " make thread failed\n");
+		wrefresh(server.mainWin);
 		goto EXIT;
 	}
 	pthread_t server_pid;
-	if(pthread_create(&server_pid, NULL, (void*)outputBox, (void*)server)){
+	if(pthread_create(&server_pid, NULL, (void*)outputBox, (void*)&server)){
 		perror("make new thread");
-		mvwprintw(server, 0, 0, " make thread failed\n");
-		wrefresh(server);
+		mvwprintw(server.mainWin, 0, 0, " make thread failed\n");
+		wrefresh(server.mainWin);
 		goto EXIT;
 	}
 	refresh();
@@ -322,23 +421,27 @@ int main(int argc, char *argv[]) {
 	noecho();
 
 	if(isError){
-		mvwprintw(server, 0, 0, "%s", errorMsg);
-		wrefresh(server);
+		mvwprintw(server.mainWin, 0, 0, "%s", errorMsg);
+		wrefresh(server.mainWin);
 		goto EXIT;
 	}
 	mvwprintw(client, 0, 0, " Good bye :)");
 	
 	EXIT:
-	wprintw(server, " press any key to exit... ");
+	wprintw(server.mainWin, " press any key to exit... ");
 	wrefresh(client);
-	wrefresh(server);
+	wrefresh(server.mainWin);
 
 	getch();
 
 	free(ip);
 	delwin(client);
-	delwin(server);
+	delwin(server.mainWin);
+	delwin(server.scoreWin);
     endwin();
 	return 0;
 
 }
+
+
+
