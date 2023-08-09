@@ -1,274 +1,276 @@
-#include <stdio.h> 
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h> 
+// Partly taken from https://www.geeksforgeeks.org/socket-programming-cc/
 #include <unistd.h> 
+#include <stdio.h> 
+#include <sys/socket.h> 
+#include <stdlib.h> 
+#include <netinet/in.h> 
+#include <string.h> 
+#include <pthread.h>
+#include <ctype.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <pthread.h> 
-#include <netinet/in.h> 
-#include <errno.h>
-#define BUFSIZE 512
+#include <signal.h>
+#include <getopt.h>
+
+#define BUFSIZE 128
 #define MODE_INPUT 0
 #define MODE_OUTPUT 1
+#define MODE_REGISTER 2
+#define MAX_PLAYER 10
 
-int port = 0;
-pthread_rwlock_t mutex;
+typedef struct user{
+    char username[10];
+    char password[10];
+    int chance;
+} user;
 
-typedef struct message{
-	struct timeval timestamp;
-	char contents[BUFSIZE];
-	struct message* next;
-} msg;
+user players[MAX_PLAYER];
 
-struct linked_list{
-	msg* head;
-	msg* tail;
-	int size;
-} llist;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER ;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER ;
+int start = 0;
+char sentence[BUFSIZE];
 
+int port, num_player, turn;
+char* sourceFile;
 
-int send_bytes(int fd, void * buf, size_t len){
-    char * p = buf ;
-    size_t acc = 0 ;
-
-    while (acc < len) {
-        size_t sent ;
-        sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
-        if (sent == -1)
-                return -1 ;
-        p += sent ;
-        acc += sent ;
-    }
-    return acc ;
-}
-
-int recv_bytes(int fd, void * buf, size_t len){
-    char * p = buf ;
-    size_t acc = 0 ;
-
-    while (acc < len) {
-        size_t sent ;
-        sent = recv(fd, p, len - acc, MSG_NOSIGNAL) ;
-        if (sent == -1)
-                return -1 ;
-        p += sent ;
-        acc += sent ;
-    }
-    return acc ;
-}
-
-/* compair two timeval
-return 0 if a >= b, 
-return 1 if a < b */
-int comp(struct timeval a, struct timeval b){
-	if(a.tv_sec != b.tv_sec) return (a.tv_sec < b.tv_sec);
-	else return (a.tv_usec < b.tv_usec);
-}
-
-void addNewMsg(char* buf){
-
-	msg* newMsg = (msg*)malloc(sizeof(msg));
-	gettimeofday(&(newMsg->timestamp), NULL);
-	strcpy(newMsg->contents, buf);
-	newMsg->next = NULL;
-
-	if(llist.size == 0) llist.head = newMsg;
-	else (llist.tail)->next = newMsg;
-	llist.tail = newMsg;
-
-	//maintain size as under 10
-	if((llist.size+1) > 10){
-		msg* tmp = llist.head;
-		llist.head = (llist.head)->next;
-		free(tmp);
-	}else llist.size++;
-
-	return;
-}
-
-// for output client (MODE_OUTPUT)-> send messages after recv timestamp
-void* sendMsgs(void* con){
-
-	int conn = *(int*)con;
-    free(con);
-
-	//recv header(timestamp)
-	struct timeval pivot;
-	if(!recv_bytes(conn, (void*)&pivot, sizeof(pivot))){
-        perror("[cannot recv header(timestamp)]");
-		goto EXIT;
-    }
-
-	// see all the llist, send it when timestamp is larger then recv stamp
-	// loop until send someting
-	while(1){
-
-		int sendCount = 0, s = 0;
-		pthread_rwlock_rdlock(&mutex);
-		for(msg* p = llist.head; p != NULL; p = p->next){
-
-			if(comp(pivot, p->timestamp)){
-				printf("> 	[OUTPUT:%d] compaired %ld and %ld...\n", conn, pivot.tv_sec, (p->timestamp).tv_sec);
-				sendCount++;
-				int len = strlen(p->contents);
-				//send header:textsize
-				if((s = send_bytes(conn, (void*)&len, sizeof(len))) == -1){
-					perror("[cannot send header(size)]");
-					goto EXIT;
-				}
-				if(s == 0 || errno == EPIPE){
-					printf("> 	[OUTPUT:%d] client disonnected\n", conn);
-					goto EXIT;
-				}
-				//send header:timestamp
-				if((s =send_bytes(conn, (void*)&(p->timestamp), sizeof(p->timestamp))) == -1){
-					perror("[cannot send header(timestamp)]");
-					printf("> 	[OUTPUT:%d] client disonnected\n", conn);
-					goto EXIT;
-				}
-				//send text
-				if((s = send_bytes(conn, (void*)p->contents, len)) == -1){
-					perror("[cannot send text]");
-					printf("> 	[OUTPUT:%d] client disonnected\n", conn);
-					goto EXIT;
-				}
-				printf("> 	[OUTPUT:%d] send: \"%s\" : %ld\n", conn, p->contents, p->timestamp.tv_sec);
-			}
-		}
-		pthread_rwlock_unlock(&mutex);
-		if(sendCount != 0) {
-			printf("> 	[OUTPUT] %d msg sended\n", sendCount);
-			break;
-		}
-	}
-
-	EXIT:
-	printf("> [OUTPUT:%d] socket closed --------------------------\n", conn);
-	close(conn);
-	return NULL;
-
-}
-
-// for input client (MODE_INPUT)-> recv messages form client and save it on saved list 
-void* getMsgs(void* con){
-	int conn = *(int*)con;
-    free(con);
-
-	int len, s;
-	int isError = 0;
-	char buf[BUFSIZE];
-
-	//recv header
-	if(recv_bytes(conn, (void*)&len, sizeof(len)) == -1){
-        perror("[cannot recv header]");
-		isError = 1;
-		goto EXIT;
-    }
-	
-	//recv text
-	if((s = recv_bytes(conn, (void*)buf, len)) == -1){
-        perror("[cannot recv text]");
-		isError = 1;
-		goto EXIT;
-    }
-	buf[s] = 0;
-
-	//make the msg and save buf, add to llist
-	pthread_rwlock_wrlock(&mutex);
-	addNewMsg(buf);
-	pthread_rwlock_unlock(&mutex);
-
-	EXIT:
-	//send header(isError)
-	if(send_bytes(conn, (void*)&isError, sizeof(isError)) == -1){
-        perror("[cannot send head(error)]");
-    }
-	printf("> 	[INPUT:%d] recv: \"%s\" : %ld\n", conn, (llist.tail)->contents, (llist.tail)->timestamp.tv_sec);
-	printf("> [INPUT:%d] socket closed\n", conn);
-	close(conn);
-	return NULL;
-
-}
-
-int main(int argc, char** argv){
-
-    if(argc < 2){
-        printf("[server] invalid command\n");
-        printf("usasg: server [port]\n");
-        return EXIT_FAILURE;
-    }else{
-		port = atoi(argv[1]); 
-    	printf("server opend -> port: %d\n", port);
-	}
-
-	//init linked list
-	llist.head = NULL;
-	llist.tail = NULL;
-	llist.size = 0;
-
-	pthread_rwlock_init(&mutex, NULL);
-	
-	//make socket and bind
-	int listen_fd, new_socket;
-	struct sockaddr_in address; 
-	memset(&address, '0', sizeof(address)); 
-	address.sin_family = AF_INET; 
-	address.sin_addr.s_addr = INADDR_ANY;
-	address.sin_port = htons(port); 
-	int addrlen = sizeof(address);
-
-	if ((listen_fd = socket(AF_INET , SOCK_STREAM, 0)) == 0)  { 
-		perror("socket failed : "); 
-		exit(EXIT_FAILURE); 
-	}
-	if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-		perror("bind failed : "); 
-		exit(EXIT_FAILURE); 
-	} 
-
-	//listen for access, when accepted, make new thread for it 
-	while (1) {
-
-		if (listen(listen_fd, 20) < 0) { 
-			perror("listen failed"); 
-			exit(EXIT_FAILURE); 
-		}
-		if ((new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen)) < 0) {
-			perror("accept failed"); 
-			exit(EXIT_FAILURE); 
-		}
+int recv_bytes(int socket_fd, void * ptr, int recv_size) {
+    char * local_ptr = (char *) ptr ;
+    ssize_t acc_size = 0; 
+    ssize_t size;
+    while(acc_size < recv_size)
+    {
+        size = recv(socket_fd, local_ptr + acc_size, recv_size - acc_size, 0);
+        acc_size += size;
         
-		//make new socket instance
-        int* passing_sock  = (int*)malloc(sizeof(int));
-        (*passing_sock) = new_socket;
+        if(size == -1 || size == 0)
+        {
+            return -1;
+        }
+    }
+    return acc_size; 
+}
 
-		//get mode from header first 
-		int mode;
-		if(recv_bytes(new_socket, (void*)&mode, sizeof(mode)) == -1){
-			perror("[cannot recv mode]"); 
-			exit(EXIT_FAILURE); 
-		}
+int send_bytes(int socket_fd, void * ptr, int send_size) {
+    char * local_ptr = (char *) ptr ;
+    ssize_t size;
+    ssize_t acc_size = 0;
+    while(acc_size < send_size)
+    {
+        size = send(socket_fd, local_ptr + acc_size, send_size - acc_size, MSG_NOSIGNAL);
+        acc_size += size;
+        if(size == -1 || size == 0)
+        {
+            return -1;
+        }
+    }
+    return acc_size;
+}
 
-		//make thread depends on mode recevd 
-        pthread_t new_pid;
-		if(mode == MODE_INPUT){
-			printf("> [INPUT:%d] someone is connected... \n", *passing_sock);
-			if(pthread_create(&new_pid, NULL, (void*)getMsgs, (void*)passing_sock)){
-				perror("cannot make thread");
-				close(new_socket);
-			}
-		}else if(mode == MODE_OUTPUT){
-			printf("> [OUTPUT:%d] someone is connected... \n", *passing_sock);
-			if(pthread_create(&new_pid, NULL, (void*)sendMsgs, (void*)passing_sock)){
-				perror("cannot make new thread");
-				close(new_socket);
-			}
-		}
-	}
+
+void getArgs(int argc, char** argv){
+
+    if(argc < 9) goto EXIT;
     
-	//TODO is it meaningful..?
-	pthread_rwlock_destroy(&mutex);
-    return EXIT_SUCCESS;
+    struct option long_options[] = {
+        {"port", required_argument, 0, 'p'},
+        {"player",  required_argument, 0,  'u'},
+        {"turn"  ,  required_argument, 0,  't'},
+        {"corpus",  required_argument, 0,  'c'}
+    };
+    
+    int c ;
+    int option_index = 0 ;
+
+    do{
+        
+        c = getopt_long(argc, argv, "p:u:t:c:", long_options, &option_index);
+        switch (c){
+        case 'p': //port
+            port = atoi(optarg);
+            break;
+        case 'u': //player
+            num_player = atoi(optarg);
+            break;
+        case 't': //turn
+            turn = atoi(optarg);
+            break;
+        case 'c': //corpus
+            sourceFile = strdup(optarg);
+            break;
+        case -1: break;
+        default:
+            goto EXIT;
+        }
+    }while(!(c == -1));
+    
+    printf("port: %d player:%d  turn:%d  corpus:\"%s\"\n", port, num_player, turn, sourceFile);
+    return;
+
+    EXIT:
+    printf("Usage: server [options]\n"
+        "Options:\n"
+        "  -p, --port       The port of the server.\n"
+        "  -u, --player  The number of user(player)\n"
+        "  -t, --turn  The number of turn.\n"
+        "  -c, --corpus  The source file path for game\n");
+    exit(EXIT_FAILURE);
 
 }
+
+// void* input_thread (void * arg) {
+//     printf("[INPUT] input client connected \n") ;
+//     int socket = *((int *)arg) ;
+//     free(arg) ;
+
+//     int text_size ; 
+//     if(recv_bytes(socket, (void *) &text_size, sizeof(int)) == -1){
+//         close(socket) ;
+//         return NULL;
+//     }
+//     printf("[INPUT] text size:%d\n", text_size) ;
+
+//     char buf[BUFSIZE];
+//     int len;
+    
+//     if((len = recv_bytes(socket, &buf, text_size)) == -1){
+//         printf("[INPUT] recv_fail\n") ;
+//         close(socket);
+//         return NULL;
+//     }
+//     buf[len] = 0;
+//     printf("[INPUT] msg from input_client: %s\n\tsocket:%d\n", buf, socket) ;
+    
+
+//     pthread_mutex_lock(&mutex);
+
+//     strcpy(saved_msg[next_index].text, buf);
+//     gettimeofday(&(saved_msg[next_index].timestamp), NULL);
+//     next_index = (next_index + 1)%MAX_MSG_COUNT;
+
+//     pthread_cond_broadcast(&cond);
+//     pthread_mutex_unlock(&mutex);
+    
+
+//     close(socket) ;    
+//     printf("[INPUT] input client disconnected \n") ;
+//     return NULL ;
+// }
+
+// void* output_thread(void * arg) {
+//     printf("[OUTPUT] output client connected \n");
+//     int socket = *(int*) arg;
+//     free(arg) ;
+
+//     struct timeval client_time ;
+//     if( recv_bytes(socket, &client_time, sizeof(struct timeval)) == -1)
+//     {
+//         close(socket);
+//         return NULL;
+//     }
+
+//     pthread_mutex_lock(&mutex);
+
+//     int latest_index = (next_index + (MAX_MSG_COUNT -1)) % MAX_MSG_COUNT;
+//     while(!timecmp(client_time, saved_msg[latest_index].timestamp))
+//     {
+//         pthread_cond_wait(&cond, &mutex);
+//         latest_index = (next_index + (MAX_MSG_COUNT -1)) % MAX_MSG_COUNT;
+//     }
+    
+//     //find the msgs to send (from oldest to latest)
+//     int oldest_index = next_index;
+//     for(int i= 0; i < MAX_MSG_COUNT; i++)
+//     {
+//         int index = (oldest_index + i) % MAX_MSG_COUNT;
+//         if(timecmp(client_time, saved_msg[index].timestamp))
+//         {
+//             if(send_msg(socket, index) == 1)
+//             {
+//                 close(socket);
+//                 pthread_mutex_unlock(&mutex);
+//                 return NULL;
+//             }
+//         } 
+//     }
+//     pthread_mutex_unlock(&mutex);
+   
+//     close(socket);
+//     printf("[OUTPUT] output client disconnected \n") ;
+//     return NULL ;
+// }
+
+int main(int argc, char *argv[]) {
+
+    getArgs(argc, argv);
+
+    
+
+    // //make server socket and bind 
+	// int listen_fd ; 
+	// struct sockaddr_in address; 
+	// int addrlen = sizeof(address); 
+	// listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+	// if (listen_fd == 0){ 
+	// 	perror("socket failed : "); 
+	// 	exit(EXIT_FAILURE); 
+	// }
+	// memset(&address, '0', sizeof(address)); 
+	// address.sin_family = AF_INET;
+	// address.sin_addr.s_addr = INADDR_ANY;
+	// address.sin_port = htons(port); 
+	// if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+	// 	perror("bind failed : "); 
+	// 	exit(EXIT_FAILURE); 
+	// } 
+
+    // //listen and give a new thread (loop)
+	// pthread_t tid ;
+	// while (1) {
+
+	// 	if (listen(listen_fd, 16) < 0) { 
+	// 		perror("listen failed"); 
+	// 		continue;
+	// 	} 
+
+	// 	int * new_socket = malloc(sizeof(int)); 
+	// 	*new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen) ;
+	// 	if (new_socket < 0) {
+	// 		perror("accept failed"); 
+	// 		continue;
+	// 	}
+		
+    //     //mode check
+	//     int mode;
+    //     if(recv_bytes(*new_socket, (void *)&mode, sizeof(int)) == -1){
+    //         close(*new_socket);
+    //         perror("cannot recv mode");
+    //         continue;
+    //     }
+
+    //     //client 구분
+    //     if(mode == MODE_INPUT){
+    //         if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
+	// 		    close(*new_socket);
+    //             perror("cannot create input thread") ;
+	// 		    continue;
+	// 	    }
+    //     }
+    //     else if(mode == MODE_OUTPUT){  
+    //         if (pthread_create(&tid, NULL, output_thread, new_socket) != 0) {
+    //             close(*new_socket);
+    //             perror("cannot create output thread") ;
+    //             continue;
+    //         }
+    //     }
+    //     else{ 
+    //         close(*new_socket);
+    //     }
+	// }
+
+    // //TODO idk if it meaningful... 
+    // free(sourceFile);
+    // return 0;
+} 

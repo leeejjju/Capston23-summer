@@ -279,8 +279,8 @@ void* outputBox(void* ss){
 			int len = 0;
 			//recv header
 			//TODO recv_byte() does not work (whyy??)
-			if((s = recv(conn, &len, sizeof(len), 0)) == -1 || (s = recv(conn, &lastTime, sizeof(lastTime), 0)) == -1){
-			// if((s = recv_bytes(conn, (void*)&len, sizeof(len))) == -1 || (s = recv_bytes(conn, (void*)&lastTime, sizeof(lastTime))) == -1){
+			// if((s = recv(conn, &len, sizeof(len), 0)) == -1 || (s = recv(conn, &lastTime, sizeof(lastTime), 0)) == -1){
+			if(!(((s = recv_bytes(conn, (void*)&len, sizeof(len))) != -1) && ((s = recv_bytes(conn, (void*)&lastTime, sizeof(lastTime))) != -1))){
 				strcpy(errorMsg, " [cannot recv header]\n");
 				isError = 1;
 				return NULL;
