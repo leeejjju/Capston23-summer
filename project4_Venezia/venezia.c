@@ -36,8 +36,7 @@ int port = 0;
 char *ip = NULL;
 char username[LIMITLEN], password[LIMITLEN];
 
-int start = 0;
-int done = 0;
+int start = 0, finish = 0, quit = 0;
 char sentence[BUFSIZE];
 
 
@@ -94,19 +93,19 @@ void getArgs(int argc, char** argv){
 		c = getopt_long(argc, argv, "i:p:u:w:", long_options, &option_index);
 		switch (c){
         case 'i': //ip
-			printf("%c :%s\n", c, optarg);
+			// printf("%c :%s\n", c, optarg);
             ip = strdup(optarg);
             break;
         case 'p': //port
-			printf("%c :%s\n", c, optarg);
+			// printf("%c :%s\n", c, optarg);
             port = atoi(optarg);
             break;
         case 'u': //username
-			printf("%c :%s\n", c, optarg);
+			// printf("%c :%s\n", c, optarg);
 			strcpy(username, optarg);
 			break;
         case 'w': //password
-			printf("%c :%s\n", c, optarg);
+			// printf("%c :%s\n", c, optarg);
             strcpy(password, optarg);
             break;
 		case -1: break;
@@ -177,7 +176,7 @@ void init(){
 void init_main(){
 	mvprintw(2, 1, "2023-summer capston1-study");
 	mvprintw(27, COLS-10, "@leeejjju");
-	move(30, 0);
+	// move(30, 0);
 	
 	refresh();
 
@@ -207,21 +206,22 @@ void* inputBox(void* c){
 
 	while(!start); //wait for start
 	echo();
+	int last = 0;
 	
 	while(1){
 		
-		werase(client);
-		wrefresh(client);
+		if(finish) last = 1;
+		
 
 		wgetstr(client, buf); //get one sentence
 		if(!strcmp(buf, "quit")){ 
-			done = 1;
+			quit = 1;
 			break;
 		}
 		int len = strlen(buf);
 		if(len == 0 || len > BUFSIZE){
 			werase(client);
-			mvwprintw(client, 0, 0, " cannot send the msg:(");
+			wprintw(client, " cannot send the msg:(");
 			getch();
 			continue;
 		}
@@ -257,9 +257,11 @@ void* inputBox(void* c){
 			return NULL;
 		}
 		shutdown(conn, SHUT_WR);
+		werase(client);
+		wrefresh(client);
 		close(conn);
 
-		if(done) break;
+		if(last) break;
 	}
 
 	return NULL;
@@ -279,13 +281,15 @@ void init_outputBox(windows* server){
 	idlok(server->mainWin, TRUE);
 	scrollok(server->mainWin, TRUE);
 	werase(server->mainWin);
-	wprintw(server->mainWin, "\n\n\n waiting for start...\n %s\n");
+	wprintw(server->mainWin, " enter \"quit\" to exit!\n");
+	wprintw(server->mainWin, " waiting for start...\n");
 	wrefresh(server->mainWin);
 	refresh();
 
 	WINDOW* outBox2 = newwin(19, 20, 4, (COLS-22));
 	wbkgd(outBox2, COLOR_PAIR(THEME));
 	box(outBox2, ACS_VLINE, ACS_HLINE);
+	mvwprintw(outBox2, 0, 6, "[score]");
 	wrefresh(outBox2);
 	refresh();
 
@@ -307,7 +311,9 @@ void* outputBox(void* ss){
 	int conn;
 	int s, i = 1;
 
-	while(!done){
+	while(!finish){
+
+		if(quit) break;
 		
 		if(!(conn = makeConnection())){
 			isError = 1;
@@ -329,28 +335,14 @@ void* outputBox(void* ss){
 			return NULL;
 		}else start = 1;
 
-		if(s == 0) {
-			close(conn);
-			break;
-		}
-
 		werase(mainWin);
-		wmove(mainWin, 0, 0);
 		wprintw(mainWin, "\n\n [round %d]\n", i++);
-		wprintw(mainWin, " \"%s\"\n", buf);
+		wprintw(mainWin, " %s", buf);
 		wrefresh(mainWin);
 
-		// if(done || s == 0){
-		// 	done = 1;
-		// 	close(conn);
-		// 	wprintw(mainWin, " game end!\n"); 
-		// 	wrefresh(mainWin);
-		// 	break;
-		// }
+		if(!strcmp(buf, "Game End") || s == 0) finish = 1;
 
 		werase((scoreWin));
-		wprintw(scoreWin, " [score]\n");
-		wrefresh(scoreWin);
 		//recv score
 		while(1){
 			if((s = recv_bytes(conn, (void*)buf, LIMITLEN)) == -1){
@@ -440,8 +432,6 @@ int main(int argc, char *argv[]) {
 	//exit
 	pthread_join(server_pid, NULL);
 
-	noecho();
-
 	if(isError){
 		mvwprintw(server.mainWin, 0, 0, "%s", errorMsg);
 		wrefresh(server.mainWin);
@@ -450,6 +440,7 @@ int main(int argc, char *argv[]) {
 	mvwprintw(client, 0, 0, " Good bye :)");
 	
 	EXIT:
+	noecho();
 	wprintw(server.mainWin, " press any key to exit... ");
 	wrefresh(client);
 	wrefresh(server.mainWin);

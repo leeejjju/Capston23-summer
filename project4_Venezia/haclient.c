@@ -149,21 +149,7 @@ void * inputBox(void * c){
          fprintf(stderr, "ERROR: Can't connect\n");
          return NULL;
       }
-
-      wgetstr(client, buf);
-
-      if(strlen(buf) > 128 || strlen(buf) <= 0){
-         werase(client);
-         mvwprintw(client, 0, 0, " cannot send :(");
-         getch();
-         werase(client);
-         wrefresh(client);
-         continue;
-      }
-
-      int len = strlen(buf);
       int mode = 0;
-
       if( !(s = send_bytes(conn, (void *)&mode, 4)) ){
          fprintf(stderr, " [cannot send your output mode data]\n");
          return NULL;
@@ -176,6 +162,17 @@ void * inputBox(void * c){
          fprintf(stderr, " [cannot send your password data]\n");
          return NULL;
       }
+      wgetstr(client, buf);
+
+      if(strlen(buf) > 128 || strlen(buf) <= 0){
+         werase(client);
+         mvwprintw(client, 0, 0, " cannot send :(");
+         getch();
+         werase(client);
+         wrefresh(client);
+         continue;
+      }
+
       if( !( s = send_bytes(conn, buf, 128)) ){
          fprintf(stderr, " [cannot send your buffer data]\n");
          return NULL;
@@ -228,8 +225,9 @@ void * outputBox(void * ss){
    int s, i = 0;
    int mode = 1;
 
-   
+   int count = 0;
    while(done != 1){
+      count ++;
       if(!(conn = makeConnection())){
          fprintf(stderr," [cannnot connect]\n");
          return NULL;
@@ -255,7 +253,7 @@ void * outputBox(void * ss){
          return NULL;
       }
       sen_cnt++;
-
+   
       wprintw(game_board, "%d.--------------------------------------\n",sen_cnt);
       wrefresh(game_board);
       wprintw(game_board, "-> %s <-\n", sentence);
@@ -277,7 +275,7 @@ void * outputBox(void * ss){
          }
          wprintw(score_board, " %10s:  %d\n",score_username, score);
          wrefresh(score_board);
-      }
+      }  
       if(close(conn) == -1){
          fprintf(stderr, " [cannot close the socekt]\n");
          return NULL;
@@ -300,16 +298,16 @@ void getoption(int argc, char *argv[]){
     while ((opt = getopt_long(argc, argv, "i:o:u:p:", long_options, NULL)) != -1) {
       switch (opt) {
          case 'i':
-            strcpy(ip, argv[2]);
+            strcpy(ip, optarg); 
             break;
          case 'o':
-            port = atoi(argv[4]);
+            port = atoi(optarg);
             break;
          case 'u':
-            strcpy(username, argv[6]);
+            strcpy(username, optarg);
             break;    
          case 'p':
-            strcpy(password, argv[8]);
+            strcpy(password, optarg);
             break;
          case '?':
             fprintf(stderr, "ERROR: Wrong input option\n");
