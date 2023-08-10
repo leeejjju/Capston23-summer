@@ -18,15 +18,13 @@
 #define MODE_INPUT 0
 #define MODE_OUTPUT 1
 #define MODE_REGISTER 2
-#define MAX_PLAYER 10
 
 typedef struct user{
     char username[10];
     char password[10];
     int chance;
 } user;
-
-user players[MAX_PLAYER];
+user* players;
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER ;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER ;
@@ -69,7 +67,6 @@ int send_bytes(int socket_fd, void * ptr, int send_size) {
     return acc_size;
 }
 
-
 void getArgs(int argc, char** argv){
 
     if(argc < 9) goto EXIT;
@@ -107,6 +104,7 @@ void getArgs(int argc, char** argv){
     }while(!(c == -1));
     
     printf("port: %d player:%d  turn:%d  corpus:\"%s\"\n", port, num_player, turn, sourceFile);
+    players = (user*)malloc(sizeof(user)*num_player);
     return;
 
     EXIT:
@@ -119,6 +117,7 @@ void getArgs(int argc, char** argv){
     exit(EXIT_FAILURE);
 
 }
+
 
 // void* input_thread (void * arg) {
 //     printf("[INPUT] input client connected \n") ;
@@ -206,8 +205,6 @@ int main(int argc, char *argv[]) {
 
     getArgs(argc, argv);
 
-    
-
     // //make server socket and bind 
 	// int listen_fd ; 
 	// struct sockaddr_in address; 
@@ -228,8 +225,9 @@ int main(int argc, char *argv[]) {
 
     // //listen and give a new thread (loop)
 	// pthread_t tid ;
+    // int connected = 0;
 	// while (1) {
-
+        
 	// 	if (listen(listen_fd, 16) < 0) { 
 	// 		perror("listen failed"); 
 	// 		continue;
@@ -251,7 +249,18 @@ int main(int argc, char *argv[]) {
     //     }
 
     //     //client 구분
-    //     if(mode == MODE_INPUT){
+    //     if(mode == MODE_REGISTER){
+    //         if(connected >= num_player){
+    //             pritnf("user rejected\n");
+    //             close(*new_sockt);
+    //         }
+    //         if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
+	// 		    close(*new_socket);
+    //             perror("cannot create input thread") ;
+	// 		    continue;
+	// 	    }else connected++;
+            
+    //     }else if(mode == MODE_INPUT){
     //         if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
 	// 		    close(*new_socket);
     //             perror("cannot create input thread") ;
@@ -273,4 +282,5 @@ int main(int argc, char *argv[]) {
     // //TODO idk if it meaningful... 
     // free(sourceFile);
     // return 0;
+
 } 

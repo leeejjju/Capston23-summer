@@ -30,14 +30,15 @@ typedef struct{
 }windows;
 
 int isError = 0;
-int done = 0;
 char errorMsg[BUFSIZE];
+
 int port = 0;
-char *ip = NULL, *port_str = NULL, *username = NULL, *password = NULL;
+char *ip = NULL;
+char username[LIMITLEN], password[LIMITLEN];
 
 int start = 0;
+int done = 0;
 char sentence[BUFSIZE];
-
 
 
 int send_bytes(int fd, void * buf, size_t len){
@@ -48,7 +49,9 @@ int send_bytes(int fd, void * buf, size_t len){
         size_t sent ;
         sent = send(fd, p, len - acc, MSG_NOSIGNAL) ;
         if (sent == -1)
-                return -1 ;
+            return -1 ;
+		else if (sent == 0)
+			return 0;
         p += sent ;
         acc += sent ;
     }
@@ -63,7 +66,9 @@ int recv_bytes(int fd, void * buf, size_t len){
         size_t sent ;
         sent = recv(fd, p, len - acc, 0) ;
         if (sent == -1)
-                return -1 ;
+            return -1 ;
+		else if (sent == 0)
+			return 0;
         p += sent ;
         acc += sent ;
     }
@@ -98,11 +103,11 @@ void getArgs(int argc, char** argv){
             break;
         case 'u': //username
 			printf("%c :%s\n", c, optarg);
-            username = strdup(optarg);
+			strcpy(username, optarg);
 			break;
         case 'w': //password
 			printf("%c :%s\n", c, optarg);
-            password = strdup(optarg);
+            strcpy(password, optarg);
             break;
 		case -1: break;
 		default:
@@ -164,7 +169,7 @@ void init(){
     curs_set(2); //set corsor's visibility (0: invisible, 1: normal, 2: very visible)
     keypad(stdscr, TRUE); //enable to reading a function keys 
 	cbreak(); //accept the special characters... 
-	echo();
+	noecho();
     
 }
 
@@ -200,22 +205,21 @@ void* inputBox(void* c){
 	int s;
 	int conn;
 
-	while(start); //wait for start
+	while(!start); //wait for start
+	echo();
 	
 	while(1){
-
+		
 		werase(client);
 		wrefresh(client);
 
 		wgetstr(client, buf); //get one sentence
-		int len = strlen(buf);
-
 		if(!strcmp(buf, "quit")){ 
 			done = 1;
 			break;
 		}
-
-		if(len > 128 || len == 0){
+		int len = strlen(buf);
+		if(len == 0 || len > BUFSIZE){
 			werase(client);
 			mvwprintw(client, 0, 0, " cannot send the msg:(");
 			getch();
@@ -235,7 +239,13 @@ void* inputBox(void* c){
 			return NULL;
 		}
 		//send userinfo
-		if(!(((s = send_bytes(conn, (void*)username, LIMITLEN)) == -1)&&((s = send_bytes(conn, (void*)password, LIMITLEN)) == -1))){
+		if((s = send_bytes(conn, (void*)username, LIMITLEN)) == -1){
+			strcpy(errorMsg, " [cannot send userinfo]\n");
+			isError = 1;
+			return NULL;
+		}
+		//send userinfo
+		if((s = send_bytes(conn, (void*)password, LIMITLEN)) == -1){
 			strcpy(errorMsg, " [cannot send userinfo]\n");
 			isError = 1;
 			return NULL;
@@ -246,7 +256,10 @@ void* inputBox(void* c){
 			isError = 1;
 			return NULL;
 		}
+		shutdown(conn, SHUT_WR);
 		close(conn);
+
+		if(done) break;
 	}
 
 	return NULL;
@@ -265,7 +278,8 @@ void init_outputBox(windows* server){
 	wbkgd(server->mainWin, COLOR_PAIR(THEME));
 	idlok(server->mainWin, TRUE);
 	scrollok(server->mainWin, TRUE);
-	wprintw(server->mainWin, " enter \"quit\" to exit!\n");
+	werase(server->mainWin);
+	wprintw(server->mainWin, "\n\n\n waiting for start...\n %s\n");
 	wrefresh(server->mainWin);
 	refresh();
 
@@ -277,6 +291,8 @@ void init_outputBox(windows* server){
 
 	server->scoreWin = newwin(17, 18, 5, (COLS-21));
 	wbkgd(server->scoreWin, COLOR_PAIR(THEME));
+	idlok(server->scoreWin, TRUE);
+	scrollok(server->scoreWin, TRUE);
 	wrefresh(server->scoreWin);
 	refresh();
 
@@ -287,14 +303,12 @@ void* outputBox(void* ss){
 	windows* wins = (windows*) ss;
 	WINDOW* mainWin = wins->mainWin;
 	WINDOW* scoreWin = wins->scoreWin;
-
-	char buf[BUFSIZE];
+	char buf[BUFSIZE] = {0};
 	int conn;
 	int s, i = 1;
 
-	while(1){
-		if(done) break;
-
+	while(!done){
+		
 		if(!(conn = makeConnection())){
 			isError = 1;
 			return NULL;
@@ -306,32 +320,57 @@ void* outputBox(void* ss){
 			isError = 1;
 			return NULL;
 		}
+		shutdown(conn, SHUT_WR);
 
 		//recv sentence 
-		if((s = recv_bytes(conn, (void*)buf, BUFSIZE)) != -1){
+		if((s = recv_bytes(conn, (void*)buf, BUFSIZE)) == -1){
 			strcpy(errorMsg, " [cannot recv sentence]\n");
 			isError = 1;
 			return NULL;
 		}else start = 1;
-		wprintw(mainWin, " [round %d] %s\n", i++, buf);
+
+		if(s == 0) {
+			close(conn);
+			break;
+		}
+
+		werase(mainWin);
+		wmove(mainWin, 0, 0);
+		wprintw(mainWin, "\n\n [round %d]\n", i++);
+		wprintw(mainWin, " \"%s\"\n", buf);
 		wrefresh(mainWin);
-		refresh();
+
+		// if(done || s == 0){
+		// 	done = 1;
+		// 	close(conn);
+		// 	wprintw(mainWin, " game end!\n"); 
+		// 	wrefresh(mainWin);
+		// 	break;
+		// }
 
 		werase((scoreWin));
 		wprintw(scoreWin, " [score]\n");
+		wrefresh(scoreWin);
 		//recv score
-		while(!(s == 0)){
+		while(1){
+			if((s = recv_bytes(conn, (void*)buf, LIMITLEN)) == -1){
+				strcpy(errorMsg, " [cannot recv names info]\n");
+				isError = 1;
+				return NULL;
+			}
+			if(s == 0) break;
+
 			int score;
-			if(!(((s = recv_bytes(conn, (void*)buf, LIMITLEN)) == -1)&&((s = recv_bytes(conn, (void*)&score, sizeof(int))) == -1))){
+			if((s = recv_bytes(conn, (void*)&score, sizeof(int))) == -1){
 				strcpy(errorMsg, " [cannot recv score info]\n");
 				isError = 1;
 				return NULL;
 			}
-			buf[LIMITLEN] = 0;
-			wprintw(scoreWin, " %10s: %2d\n", buf, score);
+
+			wprintw(scoreWin, "%10s: %d\n", buf, score);
 			wrefresh(scoreWin);
-			refresh();
 		}
+		wrefresh(scoreWin);
 		close(conn);
 	}
 	return NULL;
@@ -351,29 +390,35 @@ int main(int argc, char *argv[]) {
 	init_inputBox(client);
 	refresh();
 
-	//register(send username and password)
-	// int conn, s, len;
-	// if(!(conn = makeConnection())){
-	// 	mvwprintw(server.mainWin, 0, 0, " [cannot make connection]\n");
-	// 	wrefresh(server.mainWin);
-	// 	close(conn);
-	// 	goto EXIT;
-	// }
-	// //send mode
-	// if((s = send_bytes(conn, (void*)&MODE_REGISTER, sizeof(int))) == -1){
-	// 	mvwprintw(server.mainWin, 0, 0, " [cannot send mode]\n");
-	// 	wrefresh(server.mainWin);
-	// 	close(conn);
-	// 	goto EXIT;
-	// }
-	// //send userinfo
-	// if(!(((s = send_bytes(conn, (void*)username, sizeof(username))) == -1)&&((s = send_bytes(conn, (void*)password, sizeof(password))) == -1))){
-	// 	mvwprintw(server.mainWin, 0, 0, " [cannot send userinfo]\n");
-	// 	wrefresh(server.mainWin);
-	// 	close(conn);
-	// 	goto EXIT;
-	// }
-	// close(conn);
+	//register(send username and password);
+	int conn, s, len;
+	if(!(conn = makeConnection())){
+		mvwprintw(server.mainWin, 0, 0, " [cannot make connection]\n");
+		wrefresh(server.mainWin);
+		close(conn);
+		goto EXIT;
+	}
+	//send mode
+	if((s = send_bytes(conn, (void*)&MODE_REGISTER, sizeof(int))) == -1){
+		mvwprintw(server.mainWin, 0, 0, " [cannot send mode]\n");
+		wrefresh(server.mainWin);
+		close(conn);
+		goto EXIT;
+	}
+	//send userinfo
+	if((s = send_bytes(conn, (void*)username, LIMITLEN)) == -1){
+		mvwprintw(server.mainWin, 0, 0, " [cannot send username]\n");
+		wrefresh(server.mainWin);
+		close(conn);
+		goto EXIT;
+	}
+	if((s = send_bytes(conn, (void*)password, LIMITLEN)) == -1){
+		mvwprintw(server.mainWin, 0, 0, " [cannot send password]\n");
+		wrefresh(server.mainWin);
+		close(conn);
+		goto EXIT;
+	}
+	close(conn);
 
 	//make threads
 	pthread_t client_pid;
@@ -393,7 +438,8 @@ int main(int argc, char *argv[]) {
 	refresh();
 
 	//exit
-	pthread_join(client_pid, NULL);
+	pthread_join(server_pid, NULL);
+
 	noecho();
 
 	if(isError){
@@ -418,4 +464,3 @@ int main(int argc, char *argv[]) {
 	return 0;
 
 }
-
