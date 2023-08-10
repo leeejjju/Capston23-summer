@@ -359,7 +359,7 @@ void* outputBox(void* ss){
 				return NULL;
 			}
 
-			wprintw(scoreWin, "%10s: %d\n", buf, score);
+			wprintw(scoreWin, "%-10s: %d\n", buf, score);
 			wrefresh(scoreWin);
 		}
 		wrefresh(scoreWin);
