@@ -8,4 +8,89 @@ Raindrops dance on the windowpane.
 A warm hug can heal a wounded heart.
 Nature's beauty soothes the soul.
 Hope shines even in the darkest moments.
-The sound of waves crashing, sand between my toes, and the gentle breeze remind me of the soothing embrace of the ocean, where worries melt away.
+Flowers are blooming.
+Walking under the moonlight.
+Cherish precious memories.
+The sunset colors the horizon.
+Hello everyone.
+Good morning.
+Good afternoon.
+I am fine thank you.
+Dreams are my reality.
+Met you by surprise.
+I didn't realize.
+That my life would change for ever.
+Saw you standing there.
+I didn't know I'd care.
+There was something special in the air.
+Dreams are my reality.
+The only kind of real fantasy.
+Illusions are a common thing.
+I try to live in dreams.
+It seems as if it's meant to be.
+Dreams are my reality.
+A different kind of reality.
+I dream of loving in the night.
+And loving seems all right.
+Although it's only fantasy.
+If you do exist.
+Honey, don't resist.
+Show me your new way of loving.
+Tell me that it's true.
+Show me what to do.
+I feel something special about you.
+Dreams are my reality.
+The only kind of reality.
+Maybe my foolishness is past.
+And maybe now at last.
+I'll see how the real thing can be.
+Dreams are my reality.
+A wondrous world where I like to be.
+I dream of holding you all night.
+And holding you seems right.
+Perhaps that's my reality.
+The sun sets over the calm sea.
+Dreams inspire us to reach new heights.
+Laughter echoes through the cheerful park.
+Time flies when you're having fun.
+Love blooms in unexpected places.
+Stars twinkle in the night sky.
+Raindrops dance on the windowpane.
+A warm hug can heal a wounded heart.
+Nature's beauty soothes the soul.
+Hope shines even in the darkest moments.
+Linux is a member of the UNIX family of operating systems. 
+In computing terms, UNIX has a long history. 
+The first part of this chapter provides a brief outline of that history. 
+We begin with a description of the origins of the UNIX system and the C programming language.
+And then consider the two key currents that led to the Linux system as it exists today.
+The GNU project and the development of the Linux kernel.
+All waiting threads are awoken.
+One thread is scheduled first. 
+This thread checks the state of the shared variables under protection of the associated mutex.
+And sees that there is work to be done. 
+The thread performs the required work, changes the state of the shared variables.
+To indicate that the work has been done, and unlocks the associated mutex.
+Each of the remaining threads in turn locks the mutex and tests the state of the shared variable. 
+However, because of the change made by the first thread.
+These threads see that there is no work to be done, and so unlock the mutex and go back to sleep.
+A condition variable holds no state information. 
+It is simply a mechanism for communicating information about the application’s state. 
+If no thread is waiting on the condition variable at the time that it is signaled, then the signal is lost. 
+A thread that later waits on the condition variable will unblock only when the variable is signaled once more.
+Let’s revise our previous example to use a condition variable. 
+The declarations of our global variable and associated mutex and condition variable are as follows.
+The thread locks the mutex in preparation for checking the state of the shared variable.
+The state of the shared variable is checked.
+If the shared variable is not in the desired state, then the thread must unlock the mutex. 
+So that other threads can access the shared variable.
+Before it goes to sleep on the condition variable.
+When the thread is reawakened because the condition variable has been signaled.
+The mutex must once more be locked.
+Since, typically, the thread then immediately accesses the shared variable.
+The greater sharing provided by threads comes at a cost.
+Threaded applications must employ synchronization primitives.
+Such as mutexes and condition variables in order to coordinate access to shared variables. 
+A mutex provides exclusive access to a shared variable. 
+A condition variable allows one or more threads to wait for notification.
+That some other thread has changed the state of a shared variable.

@@ -22,7 +22,7 @@
 typedef struct user{
     char username[10];
     char password[10];
-    int chance;
+    int score;
 } user;
 user* players;
 
@@ -38,13 +38,11 @@ int recv_bytes(int socket_fd, void * ptr, int recv_size) {
     char * local_ptr = (char *) ptr ;
     ssize_t acc_size = 0; 
     ssize_t size;
-    while(acc_size < recv_size)
-    {
+    while(acc_size < recv_size){
         size = recv(socket_fd, local_ptr + acc_size, recv_size - acc_size, 0);
         acc_size += size;
         
-        if(size == -1 || size == 0)
-        {
+        if(size == -1 || size == 0){
             return -1;
         }
     }
@@ -55,12 +53,10 @@ int send_bytes(int socket_fd, void * ptr, int send_size) {
     char * local_ptr = (char *) ptr ;
     ssize_t size;
     ssize_t acc_size = 0;
-    while(acc_size < send_size)
-    {
+    while(acc_size < send_size){
         size = send(socket_fd, local_ptr + acc_size, send_size - acc_size, MSG_NOSIGNAL);
         acc_size += size;
-        if(size == -1 || size == 0)
-        {
+        if(size == -1 || size == 0){
             return -1;
         }
     }
@@ -205,82 +201,82 @@ int main(int argc, char *argv[]) {
 
     getArgs(argc, argv);
 
-    // //make server socket and bind 
-	// int listen_fd ; 
-	// struct sockaddr_in address; 
-	// int addrlen = sizeof(address); 
-	// listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-	// if (listen_fd == 0){ 
-	// 	perror("socket failed : "); 
-	// 	exit(EXIT_FAILURE); 
-	// }
-	// memset(&address, '0', sizeof(address)); 
-	// address.sin_family = AF_INET;
-	// address.sin_addr.s_addr = INADDR_ANY;
-	// address.sin_port = htons(port); 
-	// if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-	// 	perror("bind failed : "); 
-	// 	exit(EXIT_FAILURE); 
-	// } 
+    //make server socket and bind 
+	int listen_fd ; 
+	struct sockaddr_in address; 
+	int addrlen = sizeof(address); 
+	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (listen_fd == 0){ 
+		perror("socket failed : "); 
+		exit(EXIT_FAILURE); 
+	}
+	memset(&address, '0', sizeof(address)); 
+	address.sin_family = AF_INET;
+	address.sin_addr.s_addr = INADDR_ANY;
+	address.sin_port = htons(port); 
+	if (bind(listen_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+		perror("bind failed : "); 
+		exit(EXIT_FAILURE); 
+	} 
 
-    // //listen and give a new thread (loop)
-	// pthread_t tid ;
-    // int connected = 0;
-	// while (1) {
+    //listen and give a new thread (loop)
+	pthread_t tid ;
+    int connected = 0;
+	while (1) {
         
-	// 	if (listen(listen_fd, 16) < 0) { 
-	// 		perror("listen failed"); 
-	// 		continue;
-	// 	} 
+		if (listen(listen_fd, 16) < 0) { 
+			perror("listen failed"); 
+			continue;
+		} 
 
-	// 	int * new_socket = malloc(sizeof(int)); 
-	// 	*new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen) ;
-	// 	if (new_socket < 0) {
-	// 		perror("accept failed"); 
-	// 		continue;
-	// 	}
+		int * new_socket = malloc(sizeof(int)); 
+		*new_socket = accept(listen_fd, (struct sockaddr *) &address, (socklen_t*)&addrlen) ;
+		if (new_socket < 0) {
+			perror("accept failed"); 
+			continue;
+		}
 		
-    //     //mode check
-	//     int mode;
-    //     if(recv_bytes(*new_socket, (void *)&mode, sizeof(int)) == -1){
-    //         close(*new_socket);
-    //         perror("cannot recv mode");
-    //         continue;
-    //     }
+        //mode check
+	    int mode;
+        if(recv_bytes(*new_socket, (void *)&mode, sizeof(int)) == -1){
+            close(*new_socket);
+            perror("cannot recv mode");
+            continue;
+        }
 
-    //     //client 구분
-    //     if(mode == MODE_REGISTER){
-    //         if(connected >= num_player){
-    //             pritnf("user rejected\n");
-    //             close(*new_sockt);
-    //         }
-    //         if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
-	// 		    close(*new_socket);
-    //             perror("cannot create input thread") ;
-	// 		    continue;
-	// 	    }else connected++;
+        //client 구분
+        if(mode == MODE_REGISTER){
+            if(connected >= num_player){
+                pritnf("user rejected\n");
+                close(*new_sockt);
+            }
+            if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
+			    close(*new_socket);
+                perror("cannot create input thread") ;
+			    continue;
+		    }else connected++;
             
-    //     }else if(mode == MODE_INPUT){
-    //         if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
-	// 		    close(*new_socket);
-    //             perror("cannot create input thread") ;
-	// 		    continue;
-	// 	    }
-    //     }
-    //     else if(mode == MODE_OUTPUT){  
-    //         if (pthread_create(&tid, NULL, output_thread, new_socket) != 0) {
-    //             close(*new_socket);
-    //             perror("cannot create output thread") ;
-    //             continue;
-    //         }
-    //     }
-    //     else{ 
-    //         close(*new_socket);
-    //     }
-	// }
+        }else if(mode == MODE_INPUT){
+            if (pthread_create(&tid, NULL, input_thread, new_socket) != 0) {
+			    close(*new_socket);
+                perror("cannot create input thread") ;
+			    continue;
+		    }
+        }
+        else if(mode == MODE_OUTPUT){  
+            if (pthread_create(&tid, NULL, output_thread, new_socket) != 0) {
+                close(*new_socket);
+                perror("cannot create output thread") ;
+                continue;
+            }
+        }
+        else{ 
+            close(*new_socket);
+        }
+	}
 
-    // //TODO idk if it meaningful... 
-    // free(sourceFile);
-    // return 0;
+    //TODO idk if it meaningful... 
+    free(sourceFile);
+    return 0;
 
 } 

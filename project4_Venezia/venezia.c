@@ -89,30 +89,27 @@ void getArgs(int argc, char** argv){
     int c ;
     int option_index = 0 ;
 
-    do{
-		c = getopt_long(argc, argv, "i:p:u:w:", long_options, &option_index);
+    while((c = getopt_long(argc, argv, "i:p:u:w:", long_options, &option_index)) != -1){
 		switch (c){
         case 'i': //ip
-			// printf("%c :%s\n", c, optarg);
+			printf("%c :%s\n", c, optarg);
             ip = strdup(optarg);
             break;
         case 'p': //port
-			// printf("%c :%s\n", c, optarg);
+			printf("%c :%s\n", c, optarg);
             port = atoi(optarg);
             break;
         case 'u': //username
-			// printf("%c :%s\n", c, optarg);
+			printf("%c :%s\n", c, optarg);
 			strcpy(username, optarg);
 			break;
         case 'w': //password
-			// printf("%c :%s\n", c, optarg);
+			printf("%c :%s\n", c, optarg);
             strcpy(password, optarg);
             break;
-		case -1: break;
-		default:
-            goto EXIT;
-        }
-    }while(!(c == -1));
+		case '?': goto EXIT;
+		}
+    }
 
     return;
 
@@ -183,45 +180,41 @@ void init_main(){
 }
 
 //init inputbox window
-void init_inputBox(WINDOW* client){
+void init_inputBox(WINDOW* input){
 
 	WINDOW* inBox = newwin(3, COLS, 24, 0);
 	wbkgd(inBox, COLOR_PAIR(THEME));
 	box(inBox, ACS_VLINE, ACS_HLINE);
 	wrefresh(inBox);
 
-	wbkgd(client, COLOR_PAIR(THEME));
-	idlok(client, TRUE);
-	scrollok(client, TRUE);
-	wrefresh(client);
+	wbkgd(input, COLOR_PAIR(THEME));
+	idlok(input, TRUE);
+	scrollok(input, TRUE);
+	wrefresh(input);
 	refresh();
 }
 
 void* inputBox(void* c){
 
-	WINDOW* client = (WINDOW*)c;
+	WINDOW* input = (WINDOW*)c;
 	char buf[BUFSIZE] = {0};
 	int s;
 	int conn;
 
 	while(!start); //wait for start
 	echo();
-	int last = 0;
 	
-	while(1){
+	while(!finish){
 		
-		if(finish) last = 1;
-		
-
-		wgetstr(client, buf); //get one sentence
+		wgetstr(input, buf); //get one sentence
 		if(!strcmp(buf, "quit")){ 
 			quit = 1;
 			break;
 		}
 		int len = strlen(buf);
 		if(len == 0 || len > BUFSIZE){
-			werase(client);
-			wprintw(client, " cannot send the msg:(");
+			werase(input);
+			wprintw(input, " cannot send the msg:(");
 			getch();
 			continue;
 		}
@@ -244,7 +237,6 @@ void* inputBox(void* c){
 			isError = 1;
 			return NULL;
 		}
-		//send userinfo
 		if((s = send_bytes(conn, (void*)password, LIMITLEN)) == -1){
 			strcpy(errorMsg, " [cannot send userinfo]\n");
 			isError = 1;
@@ -257,18 +249,18 @@ void* inputBox(void* c){
 			return NULL;
 		}
 		shutdown(conn, SHUT_WR);
-		werase(client);
-		wrefresh(client);
+
+		werase(input);
+		wrefresh(input);
 		close(conn);
 
-		if(last) break;
 	}
 
 	return NULL;
 }
 
 //init outputbox window
-void init_outputBox(windows* server){
+void init_outputBox(windows* output){
 
 	WINDOW* outBox = newwin(21, COLS, 3, 0);
 	wbkgd(outBox, COLOR_PAIR(THEME));
@@ -276,14 +268,14 @@ void init_outputBox(windows* server){
 	wrefresh(outBox);
 	refresh();
 
-	server->mainWin = newwin(19, (COLS-23), 4, 1);
-	wbkgd(server->mainWin, COLOR_PAIR(THEME));
-	idlok(server->mainWin, TRUE);
-	scrollok(server->mainWin, TRUE);
-	werase(server->mainWin);
-	wprintw(server->mainWin, " enter \"quit\" to exit!\n");
-	wprintw(server->mainWin, " waiting for start...\n");
-	wrefresh(server->mainWin);
+	output->mainWin = newwin(19, (COLS-23), 4, 1);
+	wbkgd(output->mainWin, COLOR_PAIR(THEME));
+	idlok(output->mainWin, TRUE);
+	scrollok(output->mainWin, TRUE);
+	werase(output->mainWin);
+	wprintw(output->mainWin, " enter \"quit\" to exit!\n");
+	wprintw(output->mainWin, " waiting for start...\n");
+	wrefresh(output->mainWin);
 	refresh();
 
 	WINDOW* outBox2 = newwin(19, 20, 4, (COLS-22));
@@ -293,11 +285,11 @@ void init_outputBox(windows* server){
 	wrefresh(outBox2);
 	refresh();
 
-	server->scoreWin = newwin(17, 18, 5, (COLS-21));
-	wbkgd(server->scoreWin, COLOR_PAIR(THEME));
-	idlok(server->scoreWin, TRUE);
-	scrollok(server->scoreWin, TRUE);
-	wrefresh(server->scoreWin);
+	output->scoreWin = newwin(17, 18, 5, (COLS-21));
+	wbkgd(output->scoreWin, COLOR_PAIR(THEME));
+	idlok(output->scoreWin, TRUE);
+	scrollok(output->scoreWin, TRUE);
+	wrefresh(output->scoreWin);
 	refresh();
 
 }
@@ -311,10 +303,8 @@ void* outputBox(void* ss){
 	int conn;
 	int s, i = 1;
 
-	while(!finish){
+	while(!(finish || quit)){
 
-		if(quit) break;
-		
 		if(!(conn = makeConnection())){
 			isError = 1;
 			return NULL;
@@ -358,12 +348,12 @@ void* outputBox(void* ss){
 				isError = 1;
 				return NULL;
 			}
-
 			wprintw(scoreWin, "%-10s: %d\n", buf, score);
 			wrefresh(scoreWin);
 		}
 		wrefresh(scoreWin);
 		close(conn);
+
 	}
 	return NULL;
 }
@@ -376,81 +366,80 @@ int main(int argc, char *argv[]) {
 	//init windows
 	init();
 	init_main();
-	windows server;
-	init_outputBox(&server);
-	WINDOW* client = newwin(1, COLS-2, 25, 1);
-	init_inputBox(client);
+	windows output;
+	init_outputBox(&output);
+	WINDOW* input = newwin(1, COLS-2, 25, 1);
+	init_inputBox(input);
 	refresh();
 
-	//register(send username and password);
+	//register(send username and password)
 	int conn, s, len;
 	if(!(conn = makeConnection())){
-		mvwprintw(server.mainWin, 0, 0, " [cannot make connection]\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " [cannot make connection]\n");
+		wrefresh(output.mainWin);
 		close(conn);
 		goto EXIT;
 	}
 	//send mode
 	if((s = send_bytes(conn, (void*)&MODE_REGISTER, sizeof(int))) == -1){
-		mvwprintw(server.mainWin, 0, 0, " [cannot send mode]\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " [cannot send mode]\n");
+		wrefresh(output.mainWin);
 		close(conn);
 		goto EXIT;
 	}
 	//send userinfo
 	if((s = send_bytes(conn, (void*)username, LIMITLEN)) == -1){
-		mvwprintw(server.mainWin, 0, 0, " [cannot send username]\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " [cannot send username]\n");
+		wrefresh(output.mainWin);
 		close(conn);
 		goto EXIT;
 	}
 	if((s = send_bytes(conn, (void*)password, LIMITLEN)) == -1){
-		mvwprintw(server.mainWin, 0, 0, " [cannot send password]\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " [cannot send password]\n");
+		wrefresh(output.mainWin);
 		close(conn);
 		goto EXIT;
 	}
 	close(conn);
 
 	//make threads
-	pthread_t client_pid;
-	if(pthread_create(&client_pid, NULL, (void*)inputBox, (void*)client)){
+	pthread_t input_pid;
+	if(pthread_create(&input_pid, NULL, (void*)inputBox, (void*)input)){
 		perror("make new thread");
-		mvwprintw(server.mainWin, 0, 0, " make thread failed\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " make thread failed\n");
+		wrefresh(output.mainWin);
 		goto EXIT;
 	}
-	pthread_t server_pid;
-	if(pthread_create(&server_pid, NULL, (void*)outputBox, (void*)&server)){
+	pthread_t output_pid;
+	if(pthread_create(&output_pid, NULL, (void*)outputBox, (void*)&output)){
 		perror("make new thread");
-		mvwprintw(server.mainWin, 0, 0, " make thread failed\n");
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, " make thread failed\n");
+		wrefresh(output.mainWin);
 		goto EXIT;
 	}
 	refresh();
 
 	//exit
-	pthread_join(server_pid, NULL);
+	pthread_join(output_pid, NULL);
 
 	if(isError){
-		mvwprintw(server.mainWin, 0, 0, "%s", errorMsg);
-		wrefresh(server.mainWin);
+		mvwprintw(output.mainWin, 0, 0, "%s", errorMsg);
+		wrefresh(output.mainWin);
 		goto EXIT;
-	}
-	mvwprintw(client, 0, 0, " Good bye :)");
+	}else mvwprintw(input, 0, 0, " Good bye :)");
 	
 	EXIT:
 	noecho();
-	wprintw(server.mainWin, " press any key to exit... ");
-	wrefresh(client);
-	wrefresh(server.mainWin);
+	wprintw(output.mainWin, " press any key to exit... ");
+	wrefresh(input);
+	wrefresh(output.mainWin);
 
 	getch();
 
 	free(ip);
-	delwin(client);
-	delwin(server.mainWin);
-	delwin(server.scoreWin);
+	delwin(input);
+	delwin(output.mainWin);
+	delwin(output.scoreWin);
     endwin();
 	return 0;
 

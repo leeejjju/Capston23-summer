@@ -80,7 +80,7 @@ send_bytes(int socket_fd, void * ptr, int send_size)
     {
         size = send(socket_fd, local_ptr + acc_size, send_size - acc_size, MSG_NOSIGNAL);
         acc_size += size;
-        if(size == -1 || size == 0)
+        if(size == -1 || size == 0 || size == MSG_NOSIGNAL)
         {
             return -1;
         }
@@ -123,7 +123,7 @@ void check_answer(char * buf, int index)
         player_info[index].score++;
         fgets(problem,sizeof(problem),game_source_fp);
         problem[strlen(problem) - 1] = 0;
-    }
+    }else printf("%s is incorrect! %ld:%ld\n", player_info[index].playername, strlen(buf), strlen(problem));
 }
 
 void * 
@@ -206,7 +206,7 @@ void
     }
 
     recv_next_problem_player_count++;
-    if(recv_next_problem_player_count == max_player_count)
+    if(recv_next_problem_player_count == enter_player_count)
     {
         go_to_next_problem = 0; //정답을 비교할 수 있게 바꿔준다
         recv_next_problem_player_count = 0; //모든 player에게 보내졌으면 shutdown을 통해 진짜로 보낸다.
@@ -218,9 +218,7 @@ void
     {
         if(send_bytes(socket, GameEnd, 128) == -1)
         {
-            // pthread_mutex_lock(&mutex);
-            // max_player_count--;
-            // pthread_mutex_unlock(&mutex);
+            
         }
         for(int i=0; i<max_player_count; i++)
         {
@@ -236,15 +234,17 @@ void
         exit(EXIT_SUCCESS);
     }
 
-    
+    while(recv_next_problem_player_count);
     
     //TODO 게임 도중 나가지면 지속할 건지
     if(send_bytes(socket, problem, 128) == -1)
     {
-        // pthread_mutex_lock(&mutex);
-        // max_player_count--;
-        // pthread_mutex_unlock(&mutex);
+        printf("someone left..\n");
+        pthread_mutex_lock(&mutex);
+        enter_player_count--;
+        pthread_mutex_unlock(&mutex);
     }
+    
     for(int i=0; i<max_player_count; i++)
     {
         send_bytes(socket, player_info[i].playername, 10);
@@ -253,10 +253,10 @@ void
     
 
     //모든 player에게 next problem을 보내면 그때 send
-    while(recv_next_problem_player_count);
+    
 
     shutdown(socket, SHUT_WR);
-    fprintf(stderr,"[OUTPUT %d] sending...%s\n",socket,problem);
+    fprintf(stderr,"[OUTPUT %d] sending...\"%s\" \n",socket,problem);
     // pthread_mutex_lock(&wait);
     // while(recv_next_problem_player_count)
     // {
@@ -345,7 +345,7 @@ main(int argc, char *argv[])
                         exit(EXIT_FAILURE);
                     }
                     fgets(problem,sizeof(problem),game_source_fp);
-                    problem[strlen(problem) - 1] = 0;
+                    problem[strlen(problem) - 2] = 0;
             }
             break;
          case '?':
