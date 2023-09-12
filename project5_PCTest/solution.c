@@ -1,8 +1,9 @@
 #include <stdio.h>
 
+//this is solution program
 int main(int argc, int** argv){
 
-    printf("This is solution program\n");
+    printf("input the two number:");
     int a, b;
     scanf("%d %d", &a, &b);
     printf("%d + %d = %d\n", a, b, a+b);

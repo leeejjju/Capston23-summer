@@ -13,6 +13,10 @@
 #include <fcntl.h>
 #include <sys/resource.h>
 
+//https://www.ibm.com/docs/ko/i/7.3?topic=functions-tmpfile-create-temporary-file
+//https://damool8.tistory.com/907
+//https://reakwon.tistory.com/104
+
 #define BUFSIZE 512
 #define TARGET 0
 #define SOLUTION 1
@@ -22,12 +26,10 @@ char* targetSource;
 char* solutionSorce;
 int timeLimit;
 
-
 //get information from argc, argv and parse it 
 void getArgs(int argc, char** argv){
 
     if(argc < 9) goto EXIT;
-    
     struct option long_options[] = {
         {"input", required_argument, 0, 'i'},
         {"timeout",  required_argument, 0,  't'},
@@ -35,11 +37,9 @@ void getArgs(int argc, char** argv){
         {"target",  required_argument, 0,  'h'}
     };
     
-    int c ;
-    int option_index = 0 ;
-
+    int c, option_index = 0 ;
     while((c = getopt_long(argc, argv, "i:t:s:h:", long_options, &option_index)) != -1){
-		printf("%c :%s\n", c, optarg);
+		// printf("%c :%s\n", c, optarg);
         switch (c){
         case 'i': //input
             testPath = strdup(optarg);
@@ -55,9 +55,7 @@ void getArgs(int argc, char** argv){
             break;
 		case '?': goto EXIT;
 		}
-    }
-
-    return;
+    } return;
 
     EXIT:
     printf("Usage: client [options]\n"
@@ -70,134 +68,154 @@ void getArgs(int argc, char** argv){
 
 }
 
-//return 1 on success, return 0 on failure
+//return 0 on success, return 1 on failure
 int compileSource(char* soruce, int mode){
-
     pid_t pid = fork();
     int exitStat;
 
     if(pid == 0){ //parent
         waitpid(pid, &exitStat, 0);
-        if WIFEXITED(exitStat) return 0;
-        else return 1;
+        if WIFEXITED(exitStat) return 0; //exit normaly
+        else {
+            printf("error during compile\n");
+            return 1; //exit with error
+        }
     }else if (pid > 0){ // child
         if(mode == TARGET) execlp("gcc", "gcc", "-o", "target", soruce, (char *) NULL);
         if(mode == SOLUTION) execlp("gcc", "gcc", "-o", "solution", soruce, (char *) NULL);
         exit(EXIT_SUCCESS);
-    }else{ //error
+    }else{ //fork error
         printf("cannot fork");
         return 1;
     }
-
+    //./a -i test -t 10 -s solution.c -h target.c
 }
 
-//return 0 exection time on success, return 1 on failure
-double execWithInput(char* input, int mode){
-    pid_t pid = fork();
-
-    if(pid == 0){ //parent
-        
-        int exitStat;
-        waitpid(pid, &exitStat, 0);
-
-        if(WIFEXITED(exitStat) && (WEXITSTATUS(exitStat) == EXIT_SUCCESS)) return 0;
-        else return 0; // crash, error code 1 -> isPassed = 0;
-
-    }else if(pid > 0){ //child
-
-        //limit num of fd
-        const struct rlimit* rlp;
-        if(setrlimit(RLIMIT_NOFILE, rlp) == -1){
-            perror("execWithInput: cannot set limit");
-            return EXIT_FAILURE;
-        }
-
-        // open exe file
-        int exec_fd = open("target", O_RDONLY);
-        if(exec_fd == -1){
-            fprintf(stderr, "execWithInput: cannot open exec file\n");
-            return EXIT_FAILURE;
-        }
-
-        // open input file and use it as stdin (pipe and dup2)
-        int input_fd = open(input, O_RDONLY);
-        input_fd = dup2(input_fd, STDIN_FILENO);
-        
-        //exec...? 
-        if(mode == TARGET) execlp("target", "target", (char *) NULL);
-        if(mode == SOLUTION) execlp("solution", "solution", (char *) NULL);
-        
-        exit(EXIT_SUCCESS);
-        
-
-    }else{ //error
-        printf("cannot fork");
-        return 1;
+//return fd success, return -1 on failure.
+int execWithInput(char* input, int mode){
+  
+    // open exe file
+    int exec_fd = open("target", O_RDONLY);
+    if(exec_fd == -1){
+        fprintf(stderr, "execWithInput: cannot open exec file\n");
+        exit(EXIT_FAILURE);
     }
 
+    // open input file and use it as stdin (pipe and dup2)
+    int input_fd = open(input, O_RDONLY);
+    input_fd = dup2(input_fd, STDIN_FILENO);
 
+    //TODO set the stdout a tmp file
+
+    //TODO limit num of fd 
+    // struct rlimit* rlp;
+    // getrlimit(RLIMIT_NOFILE, rlp);
+    // if(setrlimit(RLIMIT_NOFILE, rlp) == -1){
+    //     perror("execWithInput: cannot set limit");
+    //     exit(EXIT_FAILURE);
+    // }
+    
+    //exec...?
+    if(mode == TARGET){
+        if(execl("target", "target", (char *) NULL) == -1){
+            fprintf(stderr, "execWithInput: cannot exec target\n");
+            exit(EXIT_FAILURE);
+        }
+    } 
+    else if(mode == SOLUTION){
+        if(execl("solution", "solution", (char *) NULL) == -1){
+            fprintf(stderr, "execWithInput: cannot exec solution\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    else printf("execWithInput: invalid input\n");
+
+    printf("##########################################im alive.\n");
+    exit(EXIT_SUCCESS); //! is it needed?
+        
 }
 
 int main(int argc, char** argv){
     int maxExecTime = 0, minExecTime = __INT_MAX__, sumExecTime = 0;
     int passedCount = 0, failedCount = 0;
-
     getArgs(argc, argv);
 
-    //fork() 컴파일 -> 오류나면 알 수 있도록 ??
-    if(compileSource(targetSource, TARGET)) fprintf(stderr, "[error] cannot compile %s\n", targetSource);
-    if(compileSource(solutionSorce, SOLUTION)) fprintf(stderr, "[error] cannot compile %s\n", solutionSorce);
+    //compile
+    if(compileSource(targetSource, TARGET) || compileSource(solutionSorce, SOLUTION)) {
+        fprintf(stderr, "[error] cannot compile\n");
+        exit(EXIT_FAILURE);
+    }
 
+    //open directory
     DIR* inputDir = NULL;
     struct dirent* one = NULL;
     char inputFilePath[BUFSIZE];
-
     if((inputDir = opendir(testPath)) == NULL){
         perror("cannot open directory");
-        return EXIT_FAILURE;
+        exit(EXIT_FAILURE);
     }
 
-    //각 input file에 대하여 
-    int i = 1;
+    //for each input file per loop... 
+    int index = 1;
     while(one = readdir(inputDir)){
-
         if(one->d_type != DT_REG) continue;
         char oneFile[BUFSIZE];
         sprintf(oneFile, "%s/%s", testPath, one->d_name);
         int isPassed = 1;
         double execTime = 0;
-        
-        //exec
-        if(execTime = (execWithInput(oneFile, TARGET)) == 0){
+        int target_fd, solution_fd;
+        pid_t target_pid, solution_pid;
+
+        // exec solution
+        solution_pid = fork();
+        if((solution_pid > 0) && (solution_fd = (execWithInput(oneFile, SOLUTION))) == -1){
+            fprintf(stderr, "error during exec solution file. case: %s\n", oneFile);
             isPassed = 0;
         }
+        //exec target
+        target_pid = fork();
+        if((target_pid > 0) && (target_fd = (execWithInput(oneFile, TARGET))) == -1){
+            fprintf(stderr, "error during exec target file. case: %s\n", oneFile);
+            isPassed = 0;
+        }
+
+        //TODO evaluate the time
+        //TODO kill the chiild on time
+        
+        //wait and check the exit status
+        int exitStat;
+        waitpid(solution_pid, NULL, 0);
+        waitpid(target_pid, &exitStat, 0);
+        //! whyrano 
+        // if(!(WIFEXITED(exitStat) && (WEXITSTATUS(exitStat)== EXIT_SUCCESS))) {
+        //     fprintf(stderr, "error during exec target file. case: %s\n", oneFile);
+        //     isPassed = 0;
+        // }
+        
+
+        // TODO 둘이 비교하기 -> 틀리면 isPassed = 0;
+        if( /*compair two || */ isPassed) {
+            printf("[Test%d] passed!\n", index++);
+            passedCount++;
+        }else {
+            printf("[Test%d] failed...\n", index++); 
+            failedCount++;
+        }
+
+        //TODO close the tmp files
+
         // 시간누적계산, min/max update 
         minExecTime = (minExecTime > execTime) ? execTime:minExecTime;
         maxExecTime = (maxExecTime < execTime) ? execTime:maxExecTime;
         sumExecTime += execTime;
-
-        // // TODO if(isPassed) fork() solution실행 -> 결과 pipe로 받아오기
-        if(isPassed){
-            if(execWithInput(oneFile, SOLUTION)){
-                isPassed = 0;
-            }
-        }
-
-        // TODO 둘이 비교하기 -> 틀리면 isPassed = 0;
-        if( /*compair two || */ isPassed) {
-            printf("[Test%d] passed!\n", i++);
-            passedCount++;
-        }else {
-            printf("[Test%d] failed...\n", i++); 
-            failedCount++;
-        }
         
     }
 
     //display the summary
-    if( 1 /*condition*/ ) printf(" ========== Success ==========\n");
+    //TODO set the final condition
+    if( failedCount == 0) printf(" ========== Success ==========\n");
     else printf(" ========== Failed ==========\n");
-    printf("[summary of %s]\n", targetSource);
+    printf("[summary of \"%s\"]\n", targetSource);
     printf("passed input: %d\n", passedCount);
     printf("failed input: %d\n", failedCount);
     printf("maximum execution time: %d\n", maxExecTime);
