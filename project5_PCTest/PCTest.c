@@ -133,6 +133,23 @@ void timeOver(int signo){
     fprintf(stderr, "   time over: process terminated\n");
 }
 
+//get the contents from pipe and store it in tmp file
+int makeTmpFile(int pipe_fd){
+    FILE* tmpFile = tmpfile();
+    int tmp_fd = fileno(tmpFile);
+    char buf[BUFSIZE];
+    int len, w;
+    while((len = read(pipe_fd, buf, BUFSIZE)) != 0){
+        buf[len] = 0;
+        w = write(tmp_fd, buf, len);
+        while(w < len){
+            len -= w;
+            write(tmp_fd, buf, len);
+        }
+    }
+    return tmp_fd;
+}
+
 int main(int argc, char** argv){
 
     struct timespec start, fin;
@@ -143,6 +160,7 @@ int main(int argc, char** argv){
 
     //compile
     if(compileSource(targetSource, TARGET) || compileSource(solutionSorce, SOLUTION)) {
+        printf("    program terminated...\n");
         exit(EXIT_FAILURE);
     }
 
@@ -214,15 +232,17 @@ int main(int argc, char** argv){
         double execTime = (fin.tv_sec - start.tv_sec)*1000.0 + (fin.tv_nsec - start.tv_nsec)/1000000.0;
         
         if(!(WIFEXITED(exitStat) && (WEXITSTATUS(exitStat)== EXIT_SUCCESS))) {
+            fprintf(stderr, "   program terminated with error code\n");
             isPassed = 0;
         }
         
-        //TODO need to using tmpfile() ...??
+        int solution_tmp_fd = makeTmpFile(solution_fd[READ_END]); 
+        int target_tmp_fd = makeTmpFile(target_fd[READ_END]); 
         char solution_buf[BUFSIZE], target_buf[BUFSIZE];
         int len = 0;
-        while((len = read(solution_fd[READ_END], solution_buf, BUFSIZE)) != 0){
+        while((len = read(solution_tmp_fd, solution_buf, BUFSIZE)) != 0){
             solution_buf[len] = 0;
-            len = read(target_fd[READ_END], target_buf, BUFSIZE);
+            len = read(target_tmp_fd, target_buf, BUFSIZE);
             target_buf[len] = 0;
             if(strcmp(solution_buf, target_buf)){
                 isPassed = 0;
@@ -231,6 +251,8 @@ int main(int argc, char** argv){
         }
         close(solution_fd[READ_END]);
         close(target_fd[READ_END]);
+        close(solution_tmp_fd);
+        close(target_tmp_fd);
 
         if(isPassed) {
             printf("[Test%d] passed! (%lf msec)\n", index++, execTime);
@@ -249,7 +271,6 @@ int main(int argc, char** argv){
     //display the summary
     if( failedCount == 0) printf(" ============= Success =============\n");
     else printf(" ============= Failed =============\n");
-    printf(":: summary of \"%s\" ::\n", targetSource);
     printf("passed input: %d\n", passedCount);
     printf("failed input: %d\n", failedCount);
     printf("maximum execution time: %lf msec\n", maxExecTime);
