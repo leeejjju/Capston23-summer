@@ -1,4 +1,3 @@
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,9 +17,8 @@
 char* testPath;
 char* targetSource;
 char* solutionSorce;
-int timeLimit;
+int timeLimit, exitStat;
 pid_t target_pid, solution_pid;
-int exitStat;
 
 //get information from argc, argv and parse it 
 void getArgs(int argc, char** argv){
@@ -85,7 +83,7 @@ int compileSource(char* soruce, int mode){
         printf("cannot fork");
         return 1;
     }
-    //./a -i test -t 10 -s solution.c -h target.c
+
 }
 
 //return 0 success, return 1 on failure.
@@ -131,13 +129,8 @@ int execWithInput(char* input, int mode){
 
 //handle the signal from SIGALARM
 void timeOver(int signo){
-    if(WIFSTOPPED(exitStat)){
-        // printf("%d: dead\n", target_pid);
-    }else {
-        //printf("%d: alive\n", target_pid);
-        kill(target_pid, SIGKILL);
-        fprintf(stderr, "   time over: process terminated\n");
-    };
+    kill(target_pid, SIGKILL);
+    fprintf(stderr, "   time over: process terminated\n");
 }
 
 int main(int argc, char** argv){
@@ -145,7 +138,6 @@ int main(int argc, char** argv){
     struct timespec start, fin;
     double maxExecTime = 0, minExecTime = __INT_MAX__, sumExecTime = 0;
     int passedCount = 0, failedCount = 0;
-    
     getArgs(argc, argv); //get args
     signal(SIGALRM, timeOver); //set the signal handler
 
@@ -222,7 +214,6 @@ int main(int argc, char** argv){
         double execTime = (fin.tv_sec - start.tv_sec)*1000.0 + (fin.tv_nsec - start.tv_nsec)/1000000.0;
         
         if(!(WIFEXITED(exitStat) && (WEXITSTATUS(exitStat)== EXIT_SUCCESS))) {
-            fprintf(stderr, "   error during exec target file. case: %s\n", oneFile);
             isPassed = 0;
         }
         
@@ -235,7 +226,6 @@ int main(int argc, char** argv){
             target_buf[len] = 0;
             if(strcmp(solution_buf, target_buf)){
                 isPassed = 0;
-                // printf("#%s (solution)\n#%s (target)\n", solution_buf, target_buf);
                 break;
             }
         }
@@ -243,13 +233,13 @@ int main(int argc, char** argv){
         close(target_fd[READ_END]);
 
         if(isPassed) {
-            printf("[Test%d] passed!\n", index++);
+            printf("[Test%d] passed! (%lf msec)\n", index++, execTime);
             passedCount++;
         }else {
-            printf("[Test%d] failed...\n", index++); 
+            printf("[Test%d] failed... (%lf msec)\n", index++, execTime); 
             failedCount++;
         }
-        // 시간누적계산, min/max update 
+        // evalutae time, min/max update 
         minExecTime = (minExecTime > execTime) ? execTime:minExecTime;
         maxExecTime = (maxExecTime < execTime) ? execTime:maxExecTime;
         sumExecTime += execTime;
@@ -259,7 +249,7 @@ int main(int argc, char** argv){
     //display the summary
     if( failedCount == 0) printf(" ============= Success =============\n");
     else printf(" ============= Failed =============\n");
-    printf("[summary of \"%s\"]\n", targetSource);
+    printf(":: summary of \"%s\" ::\n", targetSource);
     printf("passed input: %d\n", passedCount);
     printf("failed input: %d\n", failedCount);
     printf("maximum execution time: %lf msec\n", maxExecTime);
@@ -274,5 +264,3 @@ int main(int argc, char** argv){
     return 0;
 
 }
-
-
