@@ -70,7 +70,7 @@ int compileSource(char* soruce, int mode){
 
     if(pid > 0){ //parent
         waitpid(pid, &exitStat, 0);
-        if((WIFEXITED(exitStat) && (WEXITSTATUS(exitStat)== EXIT_SUCCESS))) return 0;
+        if (WIFEXITED(exitStat)) return 0; //exit normaly
         else {
             fprintf(stderr, "   error during compile\n");
             return 1; //exit with error
