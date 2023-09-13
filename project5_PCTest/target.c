@@ -9,6 +9,7 @@ int main(int argc, int** argv){
     scanf("%d %d", &a, &b);
     printf("%d + %d = %d\n", a, b, a+b);
     if(a == 1) sleep(10);
+    else sleep(a*0.1);
 
     return 0;
 }

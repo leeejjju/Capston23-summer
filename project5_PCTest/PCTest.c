@@ -224,6 +224,10 @@ int main(int argc, char** argv){
             exit(EXIT_FAILURE);
         }
 
+        //take the contents to tmp file
+        int solution_tmp_fd = makeTmpFile(solution_fd[READ_END]); 
+        int target_tmp_fd = makeTmpFile(target_fd[READ_END]); 
+
         //wait and check the exit status
         waitpid(solution_pid, NULL, 0);
         waitpid(target_pid, &exitStat, 0);
@@ -235,9 +239,7 @@ int main(int argc, char** argv){
             fprintf(stderr, "   program terminated with error code\n");
             isPassed = 0;
         }
-        
-        int solution_tmp_fd = makeTmpFile(solution_fd[READ_END]); 
-        int target_tmp_fd = makeTmpFile(target_fd[READ_END]); 
+
         char solution_buf[BUFSIZE], target_buf[BUFSIZE];
         int len = 0;
         while((len = read(solution_tmp_fd, solution_buf, BUFSIZE)) != 0){
